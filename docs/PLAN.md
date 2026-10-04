@@ -1,0 +1,132 @@
+# Plan: the inspector, view by view
+
+Milestones for `aip-inspector`, the browser client of the AIP server API. This is M7 of
+the aip repo's `docs/PLAN.md`, broken into pieces the same loop can work through. The
+design is §10 of `docs/server-design.md` in the aip repo; the API is §4.2 and §7 there.
+Each milestone leaves `npm run build` and `npm run e2e` green.
+
+## How to use this plan
+
+For an agent told "implement the next unchecked milestone, run the tests, tick it
+off, commit":
+
+- Work on `main` in this repo. The server lives in the sibling aip repo (`../aip`,
+  branch `aip-0.5a0`); read its `src/aip/server/app.py` for the exact response shapes
+  before typing them in `src/api/types.ts`. Do not edit the aip repo from here except
+  where a milestone says so (I6).
+- Where this plan and the design disagree, the design wins; note it in the commit.
+- Tests: `npm run typecheck && npm run e2e`. The e2e harness needs `uv` and a chromium
+  from `npx playwright install chromium`, or `PLAYWRIGHT_CHANNEL=chrome` to use an installed
+  Chrome.
+- Each milestone is one commit (or a few, each green). Ticking off means changing
+  `- [ ]` to `- [x]` on the heading and adding one line under it:
+  `Done <date>, commit <short sha>: <one-sentence note>`. End commit messages with
+  `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- Do not start the next milestone in the same session; stop after the commit and
+  report what the proof printed.
+- Keep dependencies few. React and Vite are decided; add a library only when a
+  milestone names the need (graph layout in I1, diffing in I2).
+
+## - [x] I0 — Scaffold
+
+Done 2026-10-03: Vite + React + TypeScript, base `/inspector/`, dev proxy for the four
+API prefixes, a typed `api` client with the error envelope and bearer token, a catalog
+table, and a Playwright harness that boots `aip server` from `../aip`, publishes
+`billing-support`, and asserts it appears.
+
+## - [ ] I1 — Catalog and the procedure page
+
+Scope: view 1 of §10.
+
+- Routing: a hash router (`#/`, `#/p/<name>[@rev]`, later `#/runs/<id>`), so the
+  bundle serves from one path under `aip server --inspector` with no fallback rule.
+  Hand-rolled or `react-router` in hash mode; either is fine.
+- Catalog page: the table gains a search box over `/catalog/search` (the ranked hits
+  replace the table while the query is non-empty) and links to the procedure page.
+- Procedure page from `GET /catalog/{name}`: description, purpose, triggers,
+  do-not-use-when, anti-patterns, the start input with the example JSON, the revision
+  list with the pin marked, and the step graph: one node per step coloured by kind,
+  `inputs_to` edges, router branches as labelled edges, the end step marked. Layered
+  layout (dagre or elkjs; pick one, note why) rendered as inline SVG.
+- Revision switcher (`name@rev`) re-fetches the page.
+
+Proof:
+
+```
+npm run typecheck && npm run e2e     # new spec: procedure page shows every step name of billing-support as a graph node, and the router's branch labels
+```
+
+## - [ ] I2 — Source and revision diff
+
+Scope: view 2.
+
+- File manifest from `/catalog/{name}/files` with size and sha256; a file viewer over
+  `/catalog/{name}/files/{path}` (text shown monospace, binary offered as download).
+- Diff between two revisions of the same name: manifest-level (added, removed,
+  changed by hash) and a line diff for changed text files, computed client-side.
+
+Proof: e2e publishes a second revision of `billing-support` with one line changed,
+opens the diff, and asserts that line is the only change shown.
+
+## - [ ] I3 — Run console
+
+Scope: view 3; the same `/step` and `/answer` calls the CLI makes.
+
+- Pick a procedure, fill the start input from `example_input`, step. Each step card
+  shows the state before and after, a decision's questions with full distributions and
+  which crossed its threshold, the router's branch, a script's stdin and stdout, and a
+  client task's rendered template with the references it may load.
+- Pauses (decision without a model, client task) are answered in a form; the console
+  posts `/answer` with the run's `run_id` and continues.
+- Threshold overrides per question for this run, sent as `thresholds`.
+
+Proof: e2e drives `billing-support` through both branches (angry runs the script
+server-side; calm pauses as a client task and is answered in the UI) and asserts
+`ticket_id` appears at the end of each; both runs show as `done` in `GET /runs`.
+
+## - [ ] I4 — History
+
+Scope: view 4.
+
+- `GET /runs` filtered by name and status; a run page from `GET /runs/{id}` replaying
+  its history as a trace over the step graph from I1 (visited nodes and taken edges
+  highlighted, step cards from I3 reused read-only).
+
+Proof: e2e opens the runs from I3 and asserts the angry run's trace highlights the
+script step and the calm run's highlights the client task.
+
+## - [ ] I5 — Governance
+
+Scope: view 5 and §7.
+
+- Pin and retire from the procedure page (publish scope; the token lives in the
+  Server page's `localStorage`).
+- Per-question threshold overrides via `GET|POST /catalog/{name}/thresholds`.
+- The corpus queries from `GET /governance` rendered as lists; a 501 from the
+  filesystem backend shows as "needs the Neo4j backend", not an error.
+
+Proof: e2e pins a revision and sets a threshold override, reloads, and sees both;
+`overridden-decisions` lists the decision the calm run overrode in I3.
+
+## - [ ] I6 — Packaging: `aip server --inspector`
+
+Scope: the built bundle ships inside the aip package. This milestone edits the aip repo.
+
+- A script here (`npm run build && npm run sync`) copies `dist/` to
+  `src/aip/server/inspector/` in `AIP_REPO`.
+- In the aip repo: `aip server --inspector` mounts that directory at `/inspector`
+  (StaticFiles, `index.html` at the root); a test that `GET /inspector/` returns the
+  page when the bundle is present and 404 with a clear message when it is not.
+- This repo's e2e gains a second project that runs the same specs against the
+  served bundle instead of Vite.
+
+Proof:
+
+```
+cd ../aip && uv run aip server --backend filesystem --root /tmp/aip-root --inspector   # open http://localhost:8000/inspector/
+```
+
+## Not in this plan
+
+Editing procedures in the browser; user accounts beyond the shared token; views across
+more than one server.
