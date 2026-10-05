@@ -104,7 +104,9 @@ Scope: view 4.
 Proof: e2e opens the runs from I3 and asserts the angry run's trace highlights the
 script step and the calm run's highlights the client task.
 
-## - [ ] I5 — Governance
+## - [x] I5 — Governance
+
+Done 2026-10-05, commit 84d4433: a Governance box on the procedure page (pin/unpin, retire behind an inline confirm, the per-question threshold overrides as one map), `#/governance` answering every `GET /governance` query as a table with name/window/limit filters and a 501 shown as "needs the Neo4j backend", and `#/server` for the URL and token; per the design (§11) the token lives in `sessionStorage`, not the `localStorage` this plan named; the proof's premise did not hold since the e2e server has no decision model and I3's manual decisions never count as overridden, so the spec seeds one model-answered run through the backend's `RunBackend` and asserts `overridden-decisions` lists `triage`/`tone`; `npm run typecheck` and `npm run build` clean, `PLAYWRIGHT_CHANNEL=chrome npm run e2e` 16 passed on both a fresh and a reused root, both pages checked by screenshot.
 
 Scope: view 5 and §7.
 
