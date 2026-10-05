@@ -59,7 +59,9 @@ Proof:
 npm run typecheck && npm run e2e     # new spec: procedure page shows every step name of billing-support as a graph node, and the router's branch labels
 ```
 
-## - [ ] I2 — Source and revision diff
+## - [x] I2 — Source and revision diff
+
+Done 2026-10-05, commit 06608e7: source page with the manifest (size, sha256, mode) and a text/binary file viewer, diff page with manifest status by hash and a hand-rolled LCS line diff for changed text files (no diff library: files are a few KB); `npm run typecheck` clean, `PLAYWRIGHT_CHANNEL=chrome npm run e2e` 7 passed, both pages checked by screenshot.
 
 Scope: view 2.
 
