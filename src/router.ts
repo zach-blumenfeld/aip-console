@@ -6,12 +6,16 @@ import { useEffect, useState } from "react";
 //                         #/p/<ref>/files[/<path>]    source: the manifest, and one file open
 //                         #/p/<name>/diff[/<a>..<b>]  diff between two revisions of name
 //                         #/run[/<ref>]               run console: pick a procedure, then drive it
+//                         #/runs[?name=&status=]      history: the runs the server persisted
+//                         #/runs/<id>                 one run replayed as a trace over the step graph
 export type Route =
   | { page: "catalog" }
   | { page: "procedure"; ref: string }
   | { page: "source"; ref: string; path?: string }
   | { page: "diff"; name: string; a?: string; b?: string }
   | { page: "run"; ref?: string }
+  | { page: "runs"; name?: string; status?: string }
+  | { page: "run-detail"; id: string }
   | { page: "missing"; hash: string };
 
 const decodePath = (p: string) => p.split("/").map(decodeURIComponent).join("/");
@@ -31,6 +35,13 @@ export function parseHash(hash: string): Route {
   }
   m = /^run(?:\/([^/]+))?$/.exec(path);
   if (m) return { page: "run", ref: m[1] ? decodeURIComponent(m[1]) : undefined };
+  m = /^runs(?:\?(.*))?$/.exec(path);
+  if (m) {
+    const q = new URLSearchParams(m[1] ?? "");
+    return { page: "runs", name: q.get("name") ?? undefined, status: q.get("status") ?? undefined };
+  }
+  m = /^runs\/([^/?]+)$/.exec(path);
+  if (m) return { page: "run-detail", id: decodeURIComponent(m[1]) };
   return { page: "missing", hash };
 }
 
@@ -45,6 +56,14 @@ export function href(route: Route): string {
       return `#/p/${encodeURIComponent(route.name)}/diff${pair}`;
     }
     case "run": return `#/run${route.ref ? "/" + encodeURIComponent(route.ref) : ""}`;
+    case "runs": {
+      const q = new URLSearchParams();
+      if (route.name) q.set("name", route.name);
+      if (route.status) q.set("status", route.status);
+      const qs = q.toString();
+      return `#/runs${qs ? "?" + qs : ""}`;
+    }
+    case "run-detail": return `#/runs/${encodeURIComponent(route.id)}`;
     case "missing": return route.hash;
   }
 }

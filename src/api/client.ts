@@ -1,5 +1,5 @@
 import type {
-  AnswerRequest, ApiErrorBody, Capabilities, CatalogEntry, FileEntry, NextNode, ProcedureInfo, RunSummary,
+  AnswerRequest, ApiErrorBody, Capabilities, CatalogEntry, FileEntry, NextNode, ProcedureInfo, RunDetail, RunSummary,
   SearchHit, StepRequest, StepResponse,
 } from "./types";
 
@@ -84,4 +84,5 @@ export const api = {
     const qs = q.toString();
     return request<RunSummary[]>(`/runs${qs ? "?" + qs : ""}`);
   },
+  run: (id: string) => request<RunDetail>(`/runs/${encodeURIComponent(id)}`),
 };

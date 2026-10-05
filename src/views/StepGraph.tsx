@@ -10,11 +10,13 @@ interface Props {
   branches: Branch[];
   start: string;
   end: string;
-  /** Steps and edges to highlight, for the run trace (I4). */
+  /** Steps to highlight, for the run trace (I4). */
   visited?: Set<string>;
+  /** Edges a run took, as `from->to`; without it, an edge between two visited steps counts as taken. */
+  taken?: Set<string>;
 }
 
-export function StepGraph({ steps, edges, branches, start, end, visited }: Props) {
+export function StepGraph({ steps, edges, branches, start, end, visited, taken: takenEdges }: Props) {
   const g = useMemo(() => {
     const all = [
       ...edges.map((e) => ({ from: e.from, to: e.to })),
@@ -41,9 +43,10 @@ export function StepGraph({ steps, edges, branches, start, end, visited }: Props
       {g.edges.map((e) => {
         const d = e.points.map(([x, y], i) => `${i ? "L" : "M"} ${x} ${y}`).join(" ");
         const [mx, my] = midpoint(e.points);
-        const taken = visited?.has(e.from) && visited?.has(e.to);
+        const taken = takenEdges ? takenEdges.has(`${e.from}->${e.to}`) : (visited?.has(e.from) && visited?.has(e.to));
         return (
-          <g key={`${e.from}->${e.to}:${e.label ?? ""}`} className={`edge${taken ? " taken" : ""}`}>
+          <g key={`${e.from}->${e.to}:${e.label ?? ""}`} className={`edge${taken ? " taken" : ""}`}
+             data-testid="step-edge" data-from={e.from} data-to={e.to} data-taken={taken ? "true" : "false"}>
             <path d={d} fill="none" stroke="currentColor" strokeWidth={taken ? 2.5 : 1.25} markerEnd="url(#arrow)" />
             {e.label && (
               <text x={mx} y={my - 4} textAnchor="middle" className="branch-label" data-testid="branch-label">

@@ -157,7 +157,7 @@ function Console({ reference }: { reference: string }) {
       <h1>{info.name} <span className="muted rev">run @{info.revision}</span></h1>
       <p className="run-meta">
         <span>status <strong data-testid="run-status">{status}</strong></span>
-        {session.runId && <span> · run <code data-testid="run-id">{session.runId}</code></span>}
+        {session.runId && <span> · run <a href={href({ page: "run-detail", id: session.runId })}><code data-testid="run-id">{session.runId}</code></a></span>}
         {!caps.decision_model && <span className="muted"> · no decision model: decisions are answered here</span>}
         {!caps.persists_runs && <span className="muted"> · runs are not persisted by this server</span>}
         {session.turns.length > 0 && <> · <button type="button" onClick={() => setSession(fresh)} disabled={busy}>new run</button></>}

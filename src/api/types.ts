@@ -204,3 +204,20 @@ export interface RunSummary {
   updated_at: string;
   steps: number;
 }
+
+/** Why a run is paused (`run_status` in the server): the client task to do, or the answers to review. */
+export type RunPause =
+  | { kind: "client_task"; step: string; task: string | null; references: { uri: string; description: string }[]; expects: Record<string, string> }
+  | { kind: "review"; step: string; review: ReviewItem[]; expects: Record<string, string> };
+
+/** `GET /runs/{id}`: the summary fields plus the full history and the pause block. */
+export interface RunDetail {
+  run_id: string;
+  name: string;
+  revision: string;
+  status: RunStatus;
+  started_at: string;
+  updated_at: string;
+  pause: RunPause | null;
+  history: HistoryEntry[];
+}

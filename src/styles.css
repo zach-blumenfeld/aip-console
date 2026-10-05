@@ -141,3 +141,13 @@ ul.dist li.chosen code { font-weight: 600; }
 input.threshold { width: 5rem; font: inherit; }
 ol.trace { padding-left: 1.4rem; }
 ul.review li { margin: 0.2rem 0; }
+
+/* History */
+.filters { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0 1rem; }
+td.when { white-space: nowrap; font-size: 0.9rem; opacity: 0.8; }
+.status-tag.run-done { color: var(--execution); }
+.status-tag.run-paused { color: var(--router); }
+.status-tag.run-running { color: var(--decision); }
+.status-tag.run-error { color: #b00020; }
+strong.run-error { color: #b00020; }
+.history-run aside .step-graph { max-width: 100%; }

@@ -54,6 +54,7 @@ export function Procedure({ reference }: { reference: string }) {
             <span className="muted"> · {info.files.length} files</span>
             {previous && <> · <a href={href({ page: "diff", name: info.name, a: previous, b: info.revision })}>diff with previous</a></>}
             {" · "}<a href={href({ page: "run", ref: `${info.name}@${info.revision}` })}>run</a>
+            {" · "}<a href={href({ page: "runs", name: info.name })}>history</a>
           </p>
 
           <h2>Purpose</h2>

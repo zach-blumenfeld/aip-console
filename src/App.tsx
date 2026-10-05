@@ -3,6 +3,7 @@ import { Procedure } from "./views/Procedure";
 import { Source } from "./views/Source";
 import { Diff } from "./views/Diff";
 import { Run } from "./views/Run";
+import { RunPage, Runs } from "./views/History";
 import { serverUrl } from "./api/client";
 import { href, useRoute } from "./router";
 
@@ -15,6 +16,7 @@ export function App() {
         <nav className="top-nav">
           <a href={href({ page: "catalog" })}>catalog</a>
           <a href={href({ page: "run" })}>run</a>
+          <a href={href({ page: "runs" })}>history</a>
         </nav>
         <span className="muted">{serverUrl() || "same origin"}</span>
       </header>
@@ -24,6 +26,8 @@ export function App() {
         {route.page === "source" && <Source reference={route.ref} path={route.path} />}
         {route.page === "diff" && <Diff name={route.name} a={route.a} b={route.b} />}
         {route.page === "run" && <Run reference={route.ref} />}
+        {route.page === "runs" && <Runs name={route.name} status={route.status} />}
+        {route.page === "run-detail" && <RunPage id={route.id} />}
         {route.page === "missing" && <p className="error">No page at <code>{route.hash}</code>.</p>}
       </main>
     </>
