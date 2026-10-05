@@ -38,8 +38,16 @@ AIP_SERVER=http://localhost:8000 uv run aip publish examples/billing-support
 ## Building
 
 `npm run build` writes `dist/`, a static bundle with base path `/inspector/`. The aip
-package serves it from `aip server --inspector` (that wiring lands with the plan's
-packaging milestone).
+package ships a copy of it and serves it from `aip server --inspector`:
+
+```
+npm run build && npm run sync      # copies dist/ to $AIP_REPO/src/aip/server/inspector/ (default ../aip)
+cd ../aip && uv run aip server --backend filesystem --root /tmp/aip-root --inspector   # http://localhost:8000/inspector/
+```
+
+The sync replaces that directory wholesale, so commit it in the aip repo whenever the
+bundle changes; `aip server --inspector DIR` serves any built `dist/` instead, and a missing
+bundle answers 404 with the command that fills it.
 
 ## Tests
 
@@ -51,3 +59,8 @@ headless Chromium. The governance spec seeds one run with a model-answered decis
 backend's `RunBackend` interface, since the e2e server has no decision model and a manual
 decision is never "overridden". First time: `npx playwright install chromium`, or skip the download
 and drive an installed Google Chrome with `PLAYWRIGHT_CHANNEL=chrome npm run e2e`.
+
+Every spec runs twice, as two Playwright projects: `vite` against the dev server, then `bundle`
+against the freshly built `dist/` served by that same `aip server --inspector dist`, the way
+the package ships it (the aip server's start command runs `npm run build` first). The two share
+one backend root, so the second pass also covers the specs' reused-root paths.
