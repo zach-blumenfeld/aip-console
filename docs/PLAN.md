@@ -73,7 +73,9 @@ Scope: view 2.
 Proof: e2e publishes a second revision of `billing-support` with one line changed,
 opens the diff, and asserts that line is the only change shown.
 
-## - [ ] I3 — Run console
+## - [x] I3 — Run console
+
+Done 2026-10-05, commit 85fd66c: `#/run/<ref>` drives peek → step/answer like the CLI runner, with forms for the manual decision, the client task, and the review pause, per-step cards (distributions and threshold crossings, branch taken, script stdin/stdout, rendered task and references, state before and after), and per-run threshold overrides sent as `thresholds`; the calm branch asserts the drafted reply rather than `ticket_id`, since by the design it never runs the script; `npm run typecheck` and `npm run build` clean, `PLAYWRIGHT_CHANNEL=chrome npm run e2e` 10 passed, the console checked by screenshot at the decision, the client task, and the end.
 
 Scope: view 3; the same `/step` and `/answer` calls the CLI makes.
 
