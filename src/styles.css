@@ -68,3 +68,41 @@ ul.criteria { margin: 0.25rem 0 0; padding-left: 1.2rem; }
 .step-card.kind-end { --kind: var(--end); }
 .step-card h3 { margin-top: 0.25rem; }
 .kind-tag { font-size: 0.8rem; color: var(--kind); border: 1px solid var(--kind); border-radius: 999px; padding: 0 0.5rem; }
+
+/* Source view */
+.source-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 1.5rem; align-items: start; }
+@media (max-width: 56rem) { .source-grid { grid-template-columns: 1fr; } }
+table.manifest tr[aria-current="true"] td { background: var(--fill); }
+td.num { text-align: right; white-space: nowrap; }
+ol.code {
+  margin: 0.5rem 0; padding: 0.5rem 0; background: var(--fill); border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.45;
+  list-style: none; counter-reset: line; overflow: auto;
+}
+ol.code li { counter-increment: line; white-space: pre; padding-right: 1rem; }
+ol.code li::before {
+  content: counter(line); display: inline-block; width: 3em; margin-right: 1em; text-align: right;
+  opacity: 0.45; user-select: none;
+}
+.file-view h2 { margin-top: 0; }
+.links { margin: 0.5rem 0; }
+
+/* Diff view */
+.diff-pickers { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0 1rem; }
+.diff-pickers button { font: inherit; }
+.status-tag { font-size: 0.8rem; border-radius: 999px; padding: 0 0.5rem; border: 1px solid currentColor; }
+tr.status-added .status-tag { color: var(--execution); }
+tr.status-removed .status-tag { color: #b00020; }
+tr.status-changed .status-tag { color: var(--router); }
+tr.status-unchanged .status-tag { opacity: 0.5; }
+.file-diff { margin-top: 1.25rem; }
+table.line-diff {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.45;
+  background: var(--fill); border-radius: 6px; overflow: hidden;
+}
+table.line-diff td { padding: 0 0.5rem; border: 0; white-space: pre; }
+table.line-diff td.ln { width: 3em; text-align: right; opacity: 0.45; user-select: none; }
+table.line-diff .sign { display: inline-block; width: 1.2em; opacity: 0.7; }
+table.line-diff tr.add td { background: color-mix(in srgb, var(--execution) 18%, transparent); }
+table.line-diff tr.remove td { background: color-mix(in srgb, #b00020 16%, transparent); }
+table.line-diff tr.fold td { opacity: 0.55; font-style: italic; text-align: center; padding: 0.15rem; }

@@ -7,6 +7,10 @@ endpoints, the same calls the `aip` CLI makes.
 Views, in build order: catalog with the step graph drawn, source and revision diff, run
 console, history, governance. The plan is [`docs/PLAN.md`](docs/PLAN.md).
 
+Routes are hash-based: `#/` catalog, `#/p/<name>[@rev]` procedure, `#/p/<ref>/files[/<path>]`
+source manifest and viewer, `#/p/<name>/diff[/<a>..<b>]` the diff between two revisions
+(manifest by hash, line diff for changed text files, both computed client-side).
+
 ## Running
 
 Against a server you already have:
@@ -38,6 +42,7 @@ packaging milestone).
 
 `npm run e2e` starts a filesystem-backed `aip server` from the sibling aip repo
 (`AIP_REPO`, default `../aip`, needs `uv`), publishes `billing-support` into a
-throwaway root under `.aip-e2e/`, starts Vite against it, and drives the app in
+throwaway root under `.aip-e2e/` (twice: the example, then a copy with one line of
+`assets/policy.md` changed, so the diff view has two revisions), starts Vite against it, and drives the app in
 headless Chromium. First time: `npx playwright install chromium`, or skip the download
 and drive an installed Google Chrome with `PLAYWRIGHT_CHANNEL=chrome npm run e2e`.

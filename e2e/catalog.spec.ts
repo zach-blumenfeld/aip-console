@@ -6,5 +6,5 @@ test("the catalog lists the published procedure", async ({ page }) => {
   await expect(table).toBeVisible();
   const row = table.getByRole("row").filter({ hasText: "billing-support" });
   await expect(row).toHaveCount(1);
-  await expect(row).toContainText("1"); // one revision
+  await expect(row.getByRole("cell").nth(3)).toHaveText("2"); // the example and its one-line variant
 });

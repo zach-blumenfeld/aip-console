@@ -26,6 +26,9 @@ export function Procedure({ reference }: { reference: string }) {
   if (info === null) return <p className="muted">Loading {reference}…</p>;
 
   const byStep = <T extends { step: string }>(rows: T[], step: string) => rows.filter((r) => r.step === step);
+  // Revisions are newest first; the one after the current is the one published before it.
+  const revisions = entry?.revisions.map((r) => r.revision) ?? [];
+  const previous = revisions[revisions.indexOf(info.revision) + 1];
 
   return (
     <article className="procedure">
@@ -46,6 +49,11 @@ export function Procedure({ reference }: { reference: string }) {
         <section>
           <h2>Revisions</h2>
           <RevisionPicker entry={entry} current={info.revision} name={info.name} />
+          <p className="links">
+            <a href={href({ page: "source", ref: `${info.name}@${info.revision}` })}>source</a>
+            <span className="muted"> · {info.files.length} files</span>
+            {previous && <> · <a href={href({ page: "diff", name: info.name, a: previous, b: info.revision })}>diff with previous</a></>}
+          </p>
 
           <h2>Purpose</h2>
           <p className="prose">{info.purpose}</p>

@@ -1,15 +1,32 @@
 import { useEffect, useState } from "react";
 
 // Hash routes, so the bundle serves from one path under `aip server --inspector`
-// with no fallback rule:  #/            catalog
-//                         #/p/<ref>     procedure page, ref = name or name@rev
-export type Route = { page: "catalog" } | { page: "procedure"; ref: string } | { page: "missing"; hash: string };
+// with no fallback rule:  #/                          catalog
+//                         #/p/<ref>                   procedure page, ref = name or name@rev
+//                         #/p/<ref>/files[/<path>]    source: the manifest, and one file open
+//                         #/p/<name>/diff[/<a>..<b>]  diff between two revisions of name
+export type Route =
+  | { page: "catalog" }
+  | { page: "procedure"; ref: string }
+  | { page: "source"; ref: string; path?: string }
+  | { page: "diff"; name: string; a?: string; b?: string }
+  | { page: "missing"; hash: string };
+
+const decodePath = (p: string) => p.split("/").map(decodeURIComponent).join("/");
+const encodePath = (p: string) => p.split("/").map(encodeURIComponent).join("/");
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#/, "").replace(/^\/+/, "");
   if (path === "") return { page: "catalog" };
-  const m = /^p\/([^/]+)$/.exec(path);
+  let m = /^p\/([^/]+)$/.exec(path);
   if (m) return { page: "procedure", ref: decodeURIComponent(m[1]) };
+  m = /^p\/([^/]+)\/files(?:\/(.+))?$/.exec(path);
+  if (m) return { page: "source", ref: decodeURIComponent(m[1]), path: m[2] ? decodePath(m[2]) : undefined };
+  m = /^p\/([^/@]+)\/diff(?:\/([^.]+)\.\.([^.]+))?$/.exec(path);
+  if (m) {
+    return { page: "diff", name: decodeURIComponent(m[1]),
+             a: m[2] ? decodeURIComponent(m[2]) : undefined, b: m[3] ? decodeURIComponent(m[3]) : undefined };
+  }
   return { page: "missing", hash };
 }
 
@@ -17,6 +34,12 @@ export function href(route: Route): string {
   switch (route.page) {
     case "catalog": return "#/";
     case "procedure": return `#/p/${encodeURIComponent(route.ref)}`;
+    case "source":
+      return `#/p/${encodeURIComponent(route.ref)}/files${route.path ? "/" + encodePath(route.path) : ""}`;
+    case "diff": {
+      const pair = route.a && route.b ? `/${encodeURIComponent(route.a)}..${encodeURIComponent(route.b)}` : "";
+      return `#/p/${encodeURIComponent(route.name)}/diff${pair}`;
+    }
     case "missing": return route.hash;
   }
 }

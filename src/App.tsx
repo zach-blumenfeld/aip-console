@@ -1,5 +1,7 @@
 import { Catalog } from "./views/Catalog";
 import { Procedure } from "./views/Procedure";
+import { Source } from "./views/Source";
+import { Diff } from "./views/Diff";
 import { serverUrl } from "./api/client";
 import { href, useRoute } from "./router";
 
@@ -14,6 +16,8 @@ export function App() {
       <main>
         {route.page === "catalog" && <Catalog />}
         {route.page === "procedure" && <Procedure reference={route.ref} />}
+        {route.page === "source" && <Source reference={route.ref} path={route.path} />}
+        {route.page === "diff" && <Diff name={route.name} a={route.a} b={route.b} />}
         {route.page === "missing" && <p className="error">No page at <code>{route.hash}</code>.</p>}
       </main>
     </>
