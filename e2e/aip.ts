@@ -24,3 +24,12 @@ export function aip(args: string, env: NodeJS.ProcessEnv = {}): string {
 }
 
 export const EXAMPLE = () => path.join(aipRepo(), "examples", "billing-support");
+
+/** The filesystem root the e2e server runs over (see playwright.config.ts). */
+export const ROOT = path.resolve(import.meta.dirname, "..", ".aip-e2e", "root");
+
+/** Run a Python script inside the aip repo's environment, with `args` in `sys.argv[1:]`. */
+export function python(script: string, args: string[] = []): string {
+  const quoted = args.map((a) => `"${a}"`).join(" ");
+  return execSync(`uv run --project "${aipRepo()}" --group dev python - ${quoted}`, { input: script, encoding: "utf8" });
+}

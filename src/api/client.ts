@@ -1,6 +1,6 @@
 import type {
-  AnswerRequest, ApiErrorBody, Capabilities, CatalogEntry, FileEntry, NextNode, ProcedureInfo, RunDetail, RunSummary,
-  SearchHit, StepRequest, StepResponse,
+  AnswerRequest, ApiErrorBody, Capabilities, CatalogEntry, FileEntry, GovernanceQuery, GovernanceRow, NextNode,
+  ProcedureInfo, RunDetail, RunSummary, SearchHit, StepRequest, StepResponse,
 } from "./types";
 
 const SERVER_KEY = "aip.server";
@@ -11,10 +11,17 @@ export function serverUrl(): string {
   return localStorage.getItem(SERVER_KEY) ?? "";
 }
 
+/** The bearer token, kept in sessionStorage: the design (§11) says never beyond the session. */
+export function token(): string {
+  return sessionStorage.getItem(TOKEN_KEY) ?? "";
+}
+
 export function configure(server: string, token: string | null): void {
-  localStorage.setItem(SERVER_KEY, server.replace(/\/$/, ""));
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  const url = server.trim().replace(/\/$/, "");
+  if (url) localStorage.setItem(SERVER_KEY, url);
+  else localStorage.removeItem(SERVER_KEY);
+  if (token) sessionStorage.setItem(TOKEN_KEY, token);
+  else sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export class ApiError extends Error {
@@ -28,8 +35,8 @@ async function send(path: string, init: RequestInit = {}, accept = "application/
   const headers = new Headers(init.headers);
   headers.set("Accept", accept);
   if (init.body) headers.set("Content-Type", "application/json");
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const bearer = token();
+  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   const res = await fetch(serverUrl() + path, { ...init, headers });
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
@@ -85,4 +92,25 @@ export const api = {
     return request<RunSummary[]>(`/runs${qs ? "?" + qs : ""}`);
   },
   run: (id: string) => request<RunDetail>(`/runs/${encodeURIComponent(id)}`),
+
+  // Governance (§7): the publish scope for pin, retire and thresholds; read for the corpus queries.
+  /** Pin `revision` as what the bare name resolves to; null clears the pin (latest live again). */
+  pin: (name: string, revision: string | null) =>
+    request<{ name: string; pinned: string | null }>(`/catalog/${encodeURIComponent(name)}/pin`, { method: "POST", body: JSON.stringify({ revision }) }),
+  retire: (name: string, revision: string) =>
+    request<{ name: string; retired: string }>(`/catalog/${encodeURIComponent(name)}/retire`, { method: "POST", body: JSON.stringify({ revision }) }),
+  thresholds: (name: string) =>
+    request<{ name: string; thresholds: Record<string, number> }>(`/catalog/${encodeURIComponent(name)}/thresholds`),
+  /** Replaces the whole map: send every override that should remain. */
+  setThresholds: (name: string, thresholds: Record<string, number>) =>
+    request<{ name: string; thresholds: Record<string, number> }>(`/catalog/${encodeURIComponent(name)}/thresholds`, { method: "POST", body: JSON.stringify({ thresholds }) }),
+  governance: () => request<GovernanceQuery[]>("/governance"),
+  governanceQuery: (query: string, filter: { name?: string; window?: number; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (filter.name) q.set("name", filter.name);
+    if (filter.window) q.set("window", String(filter.window));
+    if (filter.limit) q.set("limit", String(filter.limit));
+    const qs = q.toString();
+    return request<GovernanceRow[]>(`/governance/${encodeURIComponent(query)}${qs ? "?" + qs : ""}`);
+  },
 };

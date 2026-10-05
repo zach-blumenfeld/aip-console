@@ -2,25 +2,28 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { CatalogEntry, ProcedureInfo, Question, Resource, StepDetail, StepInput } from "../api/types";
 import { href, navigate } from "../router";
+import { describe } from "./Source";
 import { StepGraph } from "./StepGraph";
 
 export function Procedure({ reference }: { reference: string }) {
   const [info, setInfo] = useState<ProcedureInfo | null>(null);
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after pin, retire or a threshold save: both fetches run again, the page stays up meanwhile.
+  const [version, setVersion] = useState(0);
   const name = reference.split("@")[0];
 
   useEffect(() => {
-    setInfo(null);
     setError(null);
     api.info(reference).then(setInfo).catch((e: unknown) => {
       setError(e instanceof ApiError ? `${e.kind}: ${e.message}` : String(e));
     });
-  }, [reference]);
+  }, [reference, version]);
+  useEffect(() => { setInfo(null); }, [reference]);
 
   useEffect(() => {
     api.catalog().then((all) => setEntry(all.find((c) => c.name === name) ?? null)).catch(() => setEntry(null));
-  }, [name]);
+  }, [name, version]);
 
   if (error) return <p className="error" role="alert">{error}</p>;
   if (info === null) return <p className="muted">Loading {reference}…</p>;
@@ -68,6 +71,8 @@ export function Procedure({ reference }: { reference: string }) {
           <pre data-testid="example-input">{JSON.stringify(info.example_input, null, 2)}</pre>
         </section>
       </div>
+
+      <Governance key={info.id} info={info} entry={entry} onChanged={() => setVersion((v) => v + 1)} />
 
       <h2>Step details</h2>
       {info.step_details.map((s) => (
@@ -161,4 +166,134 @@ function Criteria({ text }: { text: string }) {
   try { parsed = JSON.parse(text); } catch { /* shown raw */ }
   if (!parsed) return <pre>{text}</pre>;
   return <ul className="criteria">{Object.entries(parsed).map(([k, v]) => <li key={k}><code>{k}</code>: {v}</li>)}</ul>;
+}
+
+// ------------------------------------------------------------------ governance (view 5a, §7)
+
+interface GovernanceProps { info: ProcedureInfo; entry: CatalogEntry | null; onChanged: () => void }
+
+/** Pin and retire this revision, and the per-question threshold overrides stored for the name. All need the
+ *  publish scope: a 403 points at the Server page, where the token is set. */
+function Governance({ info, entry, onChanged }: GovernanceProps) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmRetire, setConfirmRetire] = useState(false);
+  // Overrides as typed, keyed by question name; blank means "no override for this question".
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setOverrides(Object.fromEntries(Object.entries(info.thresholds).map(([q, v]) => [q, String(v)])));
+  }, [info.thresholds]);
+
+  const pinned = entry?.pinned ?? null;
+  const isPinned = pinned === info.revision;
+
+  const act = async (what: string, call: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      await call();
+      setNote(done);
+      onChanged();
+    } catch (e) {
+      const forbidden = e instanceof ApiError && (e.status === 401 || e.status === 403);
+      setError(`${what} failed: ${describe(e)}${forbidden ? ". Set a token with the publish scope on the Server page." : ""}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveThresholds = () => {
+    const map: Record<string, number> = {};
+    for (const [q, raw] of Object.entries(overrides)) {
+      if (raw.trim() === "") continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0 || n > 1) { setError(`threshold for ${q} must be a number between 0 and 1`); return; }
+      map[q] = n;
+    }
+    void act("saving thresholds", () => api.setThresholds(info.name, map),
+             Object.keys(map).length ? `Saved ${Object.keys(map).length} ${Object.keys(map).length === 1 ? "override" : "overrides"}.` : "Cleared every override.");
+  };
+
+  const short = (r: string) => r.slice(0, 8);
+
+  return (
+    <section className="governance-box" data-testid="governance">
+      <h2>Governance</h2>
+      <div className="governance-grid">
+        <div>
+          <h3>Pin</h3>
+          <p className="muted small">The bare name resolves to the pinned revision; with no pin, to the latest live one.</p>
+          <p data-testid="pin-state">
+            {pinned ? <>pinned <code>{short(pinned)}</code>{isPinned ? " (this revision)" : ""}</> : "no pin"}
+          </p>
+          <div className="actions">
+            {!isPinned && !info.retired && (
+              <button type="button" disabled={busy}
+                      onClick={() => void act("pin", () => api.pin(info.name, info.revision), `Pinned ${short(info.revision)}.`)}>
+                Pin this revision
+              </button>
+            )}
+            {pinned && (
+              <button type="button" disabled={busy} onClick={() => void act("unpin", () => api.pin(info.name, null), "Unpinned.")}>
+                Unpin
+              </button>
+            )}
+          </div>
+
+          <h3>Retire</h3>
+          <p className="muted small">A retired revision stays readable and runnable by exact reference, but the name no longer resolves to it.</p>
+          {info.retired ? <p data-testid="retired-state">This revision is retired.</p> : (
+            <div className="actions">
+              {!confirmRetire && <button type="button" disabled={busy} onClick={() => setConfirmRetire(true)}>Retire this revision…</button>}
+              {confirmRetire && (
+                <>
+                  <span>Retire <code>{short(info.revision)}</code>? This cannot be undone.</span>
+                  <button type="button" disabled={busy}
+                          onClick={() => { setConfirmRetire(false); void act("retire", () => api.retire(info.name, info.revision), `Retired ${short(info.revision)}.`); }}>
+                    Confirm retire
+                  </button>
+                  <button type="button" onClick={() => setConfirmRetire(false)}>Cancel</button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h3>Threshold overrides</h3>
+          <p className="muted small">
+            Stored for <code>{info.name}</code> across revisions and merged under every step's own <code>thresholds</code>. Blank keeps the author's value.
+          </p>
+          {info.questions.length === 0 ? <p className="muted">No decision questions.</p> : (
+            <table className="compact" aria-label="threshold overrides">
+              <thead><tr><th>question</th><th>step</th><th>author's</th><th>override</th></tr></thead>
+              <tbody>
+                {info.questions.map((q) => (
+                  <tr key={`${q.step}:${q.name}`}>
+                    <td><code>{q.name}</code></td>
+                    <td><code>{q.step}</code></td>
+                    <td className="num">{q.threshold ?? <span className="muted">—</span>}</td>
+                    <td>
+                      <input className="threshold" type="number" min={0} max={1} step={0.05} aria-label={`override for ${q.name}`}
+                             value={overrides[q.name] ?? ""} placeholder="none"
+                             onChange={(e) => setOverrides({ ...overrides, [q.name]: e.target.value })} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {info.questions.length > 0 && (
+            <div className="actions">
+              <button type="button" disabled={busy} onClick={saveThresholds}>Save thresholds</button>
+            </div>
+          )}
+        </div>
+      </div>
+      {note && <p className="muted" data-testid="governance-note">{note}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+    </section>
+  );
 }

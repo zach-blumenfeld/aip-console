@@ -221,3 +221,11 @@ export interface RunDetail {
   pause: RunPause | null;
   history: HistoryEntry[];
 }
+
+// ------------------------------------------------------------------- governance (§7, §10.5)
+
+/** One entry of `GET /governance`: a named corpus query and where to ask it. */
+export interface GovernanceQuery { query: string; description: string; path: string }
+
+/** A row of `GET /governance/{query}`: flat, with the columns the query defines. */
+export type GovernanceRow = Record<string, unknown>;

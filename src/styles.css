@@ -151,3 +151,14 @@ td.when { white-space: nowrap; font-size: 0.9rem; opacity: 0.8; }
 .status-tag.run-error { color: #b00020; }
 strong.run-error { color: #b00020; }
 .history-run aside .step-graph { max-width: 100%; }
+
+/* Governance */
+.server-link { margin-left: auto; text-decoration: none; }
+.governance-box { border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.9rem 0.9rem; margin: 1rem 0; }
+.governance-box h2 { margin-top: 0.25rem; }
+.governance-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; }
+@media (max-width: 56rem) { .governance-grid { grid-template-columns: 1fr; } }
+.governance .query { margin: 1.25rem 0; }
+.governance .query h2 { margin-bottom: 0.1rem; }
+input.num-field { width: 6rem; font: inherit; }
+.server .fields { max-width: 40rem; }

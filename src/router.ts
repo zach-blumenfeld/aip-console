@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 //                         #/run[/<ref>]               run console: pick a procedure, then drive it
 //                         #/runs[?name=&status=]      history: the runs the server persisted
 //                         #/runs/<id>                 one run replayed as a trace over the step graph
+//                         #/governance[?name=]        the corpus queries of GET /governance as lists
+//                         #/server                    server URL and bearer token for this browser
 export type Route =
   | { page: "catalog" }
   | { page: "procedure"; ref: string }
@@ -16,6 +18,8 @@ export type Route =
   | { page: "run"; ref?: string }
   | { page: "runs"; name?: string; status?: string }
   | { page: "run-detail"; id: string }
+  | { page: "governance"; name?: string }
+  | { page: "server" }
   | { page: "missing"; hash: string };
 
 const decodePath = (p: string) => p.split("/").map(decodeURIComponent).join("/");
@@ -42,6 +46,9 @@ export function parseHash(hash: string): Route {
   }
   m = /^runs\/([^/?]+)$/.exec(path);
   if (m) return { page: "run-detail", id: decodeURIComponent(m[1]) };
+  m = /^governance(?:\?(.*))?$/.exec(path);
+  if (m) return { page: "governance", name: new URLSearchParams(m[1] ?? "").get("name") ?? undefined };
+  if (path === "server") return { page: "server" };
   return { page: "missing", hash };
 }
 
@@ -64,6 +71,8 @@ export function href(route: Route): string {
       return `#/runs${qs ? "?" + qs : ""}`;
     }
     case "run-detail": return `#/runs/${encodeURIComponent(route.id)}`;
+    case "governance": return `#/governance${route.name ? "?name=" + encodeURIComponent(route.name) : ""}`;
+    case "server": return "#/server";
     case "missing": return route.hash;
   }
 }
