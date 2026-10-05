@@ -5,11 +5,13 @@ import { useEffect, useState } from "react";
 //                         #/p/<ref>                   procedure page, ref = name or name@rev
 //                         #/p/<ref>/files[/<path>]    source: the manifest, and one file open
 //                         #/p/<name>/diff[/<a>..<b>]  diff between two revisions of name
+//                         #/run[/<ref>]               run console: pick a procedure, then drive it
 export type Route =
   | { page: "catalog" }
   | { page: "procedure"; ref: string }
   | { page: "source"; ref: string; path?: string }
   | { page: "diff"; name: string; a?: string; b?: string }
+  | { page: "run"; ref?: string }
   | { page: "missing"; hash: string };
 
 const decodePath = (p: string) => p.split("/").map(decodeURIComponent).join("/");
@@ -27,6 +29,8 @@ export function parseHash(hash: string): Route {
     return { page: "diff", name: decodeURIComponent(m[1]),
              a: m[2] ? decodeURIComponent(m[2]) : undefined, b: m[3] ? decodeURIComponent(m[3]) : undefined };
   }
+  m = /^run(?:\/([^/]+))?$/.exec(path);
+  if (m) return { page: "run", ref: m[1] ? decodeURIComponent(m[1]) : undefined };
   return { page: "missing", hash };
 }
 
@@ -40,6 +44,7 @@ export function href(route: Route): string {
       const pair = route.a && route.b ? `/${encodeURIComponent(route.a)}..${encodeURIComponent(route.b)}` : "";
       return `#/p/${encodeURIComponent(route.name)}/diff${pair}`;
     }
+    case "run": return `#/run${route.ref ? "/" + encodeURIComponent(route.ref) : ""}`;
     case "missing": return route.hash;
   }
 }

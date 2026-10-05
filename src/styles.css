@@ -106,3 +106,38 @@ table.line-diff .sign { display: inline-block; width: 1.2em; opacity: 0.7; }
 table.line-diff tr.add td { background: color-mix(in srgb, var(--execution) 18%, transparent); }
 table.line-diff tr.remove td { background: color-mix(in srgb, #b00020 16%, transparent); }
 table.line-diff tr.fold td { opacity: 0.55; font-style: italic; text-align: center; padding: 0.15rem; }
+
+/* Run console */
+.top-nav { display: flex; gap: 0.75rem; font-size: 0.9rem; }
+.top-nav a { color: inherit; opacity: 0.75; }
+.run-meta button { font: inherit; font-size: 0.85rem; }
+.run-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1.3fr); gap: 1.5rem; align-items: start; }
+@media (max-width: 56rem) { .run-grid { grid-template-columns: 1fr; } }
+.small { font-size: 0.85rem; }
+.picker { padding-left: 1.2rem; }
+.picker li { margin: 0.3rem 0; }
+.pause { border: 1px dashed var(--line); border-radius: 6px; padding: 0.5rem 0.9rem 0.9rem; margin: 0.75rem 0; background: var(--fill); }
+.pause h2 { margin-top: 0.25rem; }
+.fields { display: grid; gap: 0.5rem; margin-bottom: 0.5rem; }
+.field { display: grid; gap: 0.2rem; }
+.field textarea, .field input[type="text"], .field input[type="number"] { font: inherit; width: 100%; box-sizing: border-box; padding: 0.35rem 0.5rem; }
+.field textarea.json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.actions button { font: inherit; padding: 0.35rem 0.9rem; }
+fieldset.question { border: 1px solid var(--line); border-radius: 6px; margin: 0.5rem 0; }
+fieldset.question p { margin: 0.25rem 0 0.5rem; }
+label.option { display: block; margin: 0.2rem 0; }
+.run-card h4 { margin: 0.6rem 0 0.2rem; font-size: 0.9rem; }
+.state-pair, .io-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+@media (max-width: 56rem) { .state-pair, .io-pair { grid-template-columns: 1fr; } }
+.state-pair pre, .io-pair pre { margin: 0.25rem 0; max-height: 20rem; }
+details.states summary { cursor: pointer; opacity: 0.7; font-size: 0.9rem; margin-top: 0.5rem; }
+pre.task { white-space: pre-wrap; }
+ul.dist { list-style: none; margin: 0; padding: 0; min-width: 10rem; }
+ul.dist li { position: relative; padding: 0.05rem 0.3rem; line-height: 1.5; }
+ul.dist li .bar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--decision) 22%, transparent); border-radius: 3px; z-index: -1; }
+ul.dist li.chosen code { font-weight: 600; }
+.status-tag.flagged { color: var(--router); }
+input.threshold { width: 5rem; font: inherit; }
+ol.trace { padding-left: 1.4rem; }
+ul.review li { margin: 0.2rem 0; }

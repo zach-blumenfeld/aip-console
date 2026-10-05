@@ -1,4 +1,7 @@
-import type { ApiErrorBody, CatalogEntry, FileEntry, ProcedureInfo, SearchHit } from "./types";
+import type {
+  AnswerRequest, ApiErrorBody, Capabilities, CatalogEntry, FileEntry, NextNode, ProcedureInfo, RunSummary,
+  SearchHit, StepRequest, StepResponse,
+} from "./types";
 
 const SERVER_KEY = "aip.server";
 const TOKEN_KEY = "aip.token";
@@ -61,5 +64,24 @@ export const api = {
   file: async (ref: string, path: string): Promise<FileBytes> => {
     const res = await send(`/catalog/${encodeURIComponent(ref)}/files/${encodePath(path)}`, {}, "*/*");
     return { bytes: new Uint8Array(await res.arrayBuffer()), mediaType: res.headers.get("Content-Type") ?? "application/octet-stream" };
+  },
+
+  // Execution: the same calls the CLI runner makes (aip.client.runner).
+  capabilities: (ref: string) => request<Capabilities>(`/procedures/${encodeURIComponent(ref)}/capabilities`),
+  /** What receives `payload` after step `after` (null = the start), routers already walked. */
+  peek: (ref: string, after: string | null, payload: Record<string, unknown>) =>
+    request<NextNode | null>(`/procedures/${encodeURIComponent(ref)}/peek`, { method: "POST", body: JSON.stringify({ after, payload }) }),
+  step: (ref: string, body: StepRequest) =>
+    request<StepResponse>(`/procedures/${encodeURIComponent(ref)}/step`, { method: "POST", body: JSON.stringify(body) }),
+  answer: (ref: string, body: AnswerRequest) =>
+    request<StepResponse>(`/procedures/${encodeURIComponent(ref)}/answer`, { method: "POST", body: JSON.stringify(body) }),
+
+  runs: (filter: { name?: string; status?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (filter.name) q.set("name", filter.name);
+    if (filter.status) q.set("status", filter.status);
+    if (filter.limit) q.set("limit", String(filter.limit));
+    const qs = q.toString();
+    return request<RunSummary[]>(`/runs${qs ? "?" + qs : ""}`);
   },
 };

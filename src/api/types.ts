@@ -96,3 +96,111 @@ export interface ProcedureInfo {
 export interface ApiErrorBody {
   error: { kind: string; message: string; location?: string };
 }
+
+// ---------------------------------------------------------------- execution (§4.2, StepResponse)
+
+export interface Capabilities {
+  name: string;
+  revision: string;
+  decision_model: boolean;
+  executes_scripts: boolean;
+  persists_runs: boolean;
+  governance: boolean;
+}
+
+/** A decision question as `describe_next` and the peek endpoint hand it out. */
+export interface NextQuestion {
+  type: "noul" | "choice" | "score";
+  instructions?: string;
+  /** noul: {true, false} descriptions; choice: label -> description; score: one description per level. */
+  criteria?: Record<string, string | null> | (string | null)[];
+}
+
+/** `describe_next(node)`: what receives the next input. Routers list every branch's shape. */
+export interface NextRouter { step: string; kind: "router"; branch_on: string; branches: Record<string, NextNode | null> }
+export interface NextStep {
+  step: string;
+  kind: Exclude<StepKind, "router">;
+  inputs: Record<string, string>;
+  questions?: Record<string, NextQuestion>;
+}
+export type NextNode = NextRouter | NextStep;
+
+/** One answer of a decision model, or a manual one from `/answer`. */
+export type Answer =
+  | { type: "noul"; noul: number }
+  | { type: "choice"; choice: string; confidence: number; probabilities: Record<string, number> }
+  | { type: "score"; score: number; confidence: number; legend: Record<string, unknown>; probabilities: Record<string, number> }
+  | { type: "noul" | "choice" | "score"; manual: boolean | string | number };
+
+export interface DecisionResult {
+  model?: string;
+  usage?: { input_tokens: number | null; output_tokens: number | null };
+  answers: Record<string, Answer>;
+}
+
+export interface ClientTaskResult {
+  task: string;
+  references: { uri: string; description: string }[];
+}
+
+/** One history entry: what a step received and produced. Routers record the branch they took. */
+export interface HistoryEntry {
+  step: string;
+  kind: StepKind | "error";
+  input: Record<string, unknown>;
+  result: Record<string, unknown>;
+  manual?: boolean;
+  step_kind?: StepKind;
+}
+
+export interface ReviewItem {
+  question: string;
+  type: "noul" | "choice" | "score";
+  reason: string;
+  noul?: number;
+  confidence?: number;
+  probabilities?: Record<string, number>;
+}
+
+/** `POST /procedures/{ref}/step|answer`. */
+export interface StepResponse {
+  ran: string;
+  kind: StepKind;
+  result: Record<string, unknown>;
+  suggested: Record<string, unknown>;
+  review: ReviewItem[];
+  next: NextNode | null;
+  history: HistoryEntry[];
+  run_id: string | null;
+  name: string;
+  revision: string;
+}
+
+export interface StepRequest {
+  after: string | null;
+  payload: Record<string, unknown>;
+  history: HistoryEntry[];
+  thresholds?: Record<string, number>;
+  run_id?: string | null;
+}
+
+export interface AnswerRequest {
+  after: string | null;
+  payload: Record<string, unknown>;
+  history: HistoryEntry[];
+  answers: Record<string, boolean | string | number>;
+  run_id?: string | null;
+}
+
+export type RunStatus = "running" | "paused" | "done" | "error";
+
+export interface RunSummary {
+  run_id: string;
+  name: string;
+  revision: string;
+  status: RunStatus;
+  started_at: string;
+  updated_at: string;
+  steps: number;
+}
