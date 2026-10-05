@@ -34,7 +34,9 @@ API prefixes, a typed `api` client with the error envelope and bearer token, a c
 table, and a Playwright harness that boots `aip server` from `../aip`, publishes
 `billing-support`, and asserts it appears.
 
-## - [ ] I1 — Catalog and the procedure page
+## - [x] I1 — Catalog and the procedure page
+
+Done 2026-10-04, commit 7258323: hash router, search over `/catalog/search`, the procedure page with revision switcher and per-step cards, and the step graph as inline SVG from a hand-rolled layered layout (no dagre/elkjs: a handful of nodes per procedure does not justify the dependency); `npm run typecheck` clean, `PLAYWRIGHT_CHANNEL=chrome npm run e2e` 4 passed, the drawn graph checked by screenshot.
 
 Scope: view 1 of §10.
 
@@ -47,7 +49,8 @@ Scope: view 1 of §10.
   do-not-use-when, anti-patterns, the start input with the example JSON, the revision
   list with the pin marked, and the step graph: one node per step coloured by kind,
   `inputs_to` edges, router branches as labelled edges, the end step marked. Layered
-  layout (dagre or elkjs; pick one, note why) rendered as inline SVG.
+  layout rendered as inline SVG (hand-rolled in `src/graph/layout.ts`; swap in dagre
+  or elkjs only if a real procedure draws badly).
 - Revision switcher (`name@rev`) re-fetches the page.
 
 Proof:
