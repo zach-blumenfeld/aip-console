@@ -119,7 +119,9 @@ Scope: view 5 and §7.
 Proof: e2e pins a revision and sets a threshold override, reloads, and sees both;
 `overridden-decisions` lists the decision the calm run overrode in I3.
 
-## - [ ] I6 — Packaging: `aip server --inspector`
+## - [x] I6 — Packaging: `aip server --inspector`
+
+Done 2026-10-05, commit 41adbf2: `npm run sync` copies `dist/` into `src/aip/server/inspector/` of `AIP_REPO`, replacing the directory; in the aip repo (commit 6be3247 on `aip-0.5a0`) `create_app(inspector=dir)` mounts the bundle with StaticFiles at `/inspector/` (bare `/inspector` redirects) and a missing bundle answers a 404 in the error envelope naming the directory and `npm run build && npm run sync`, `aip server --inspector [DIR]` takes the packaged directory or a given `dist/`, the synced bundle is committed there and lands in the wheel, and `tests/server/test_http.py` covers the mount, the 404, the flag and the packaged copy; here the e2e's aip server starts with `--inspector dist` after `npm run build`, and a second Playwright project `bundle` runs every spec against it after the `vite` project on the same root; `npm run typecheck` and `npm run build` clean, `uv run pytest tests` 128 passed, `PLAYWRIGHT_CHANNEL=chrome npm run e2e` 32 passed on a fresh and a reused root, and `aip server --inspector` served the page and both assets with 200.
 
 Scope: the built bundle ships inside the aip package. This milestone edits the aip repo.
 
