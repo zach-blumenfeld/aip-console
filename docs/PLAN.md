@@ -91,7 +91,9 @@ Proof: e2e drives `billing-support` through both branches (angry runs the script
 server-side; calm pauses as a client task and is answered in the UI) and asserts
 `ticket_id` appears at the end of each; both runs show as `done` in `GET /runs`.
 
-## - [ ] I4 — History
+## - [x] I4 — History
+
+Done 2026-10-05, commit cb148c8: `#/runs` lists `GET /runs` newest first with name and status filters in the hash query, and `#/runs/<id>` replays `GET /runs/{id}` over the I1 step graph (visited nodes and the exact edges walked, from consecutive history entries, highlighted) with the I3 step cards read-only and the pause block shown; the e2e drives both branches through `/answer` and `/step` itself since spec files run in parallel; `npm run typecheck` and `npm run build` clean, `PLAYWRIGHT_CHANNEL=chrome npm run e2e` 13 passed, both pages checked by screenshot.
 
 Scope: view 4.
 
