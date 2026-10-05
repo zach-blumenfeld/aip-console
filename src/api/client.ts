@@ -1,4 +1,4 @@
-import type { ApiErrorBody, CatalogEntry, SearchHit } from "./types";
+import type { ApiErrorBody, CatalogEntry, ProcedureInfo, SearchHit } from "./types";
 
 const SERVER_KEY = "aip.server";
 const TOKEN_KEY = "aip.token";
@@ -40,4 +40,6 @@ export const api = {
   catalog: () => request<CatalogEntry[]>("/catalog"),
   search: (q: string, limit = 20) =>
     request<SearchHit[]>(`/catalog/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  /** `ref` is a name, `name@rev`, or `name@latest`. */
+  info: (ref: string) => request<ProcedureInfo>(`/catalog/${encodeURIComponent(ref)}`),
 };
