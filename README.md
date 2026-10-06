@@ -57,7 +57,8 @@ throwaway root under `.aip-e2e/` (twice: the example, then a copy with one line 
 `assets/policy.md` changed, so the diff view has two revisions), starts Vite against it, and drives the app in
 headless Chromium. The governance spec seeds one run with a model-answered decision through the
 backend's `RunBackend` interface, since the e2e server has no decision model and a manual
-decision is never "overridden". First time: `npx playwright install chromium`, or skip the download
+decision is never "overridden". That server is started with `AIP_CONFIG` pointed at nothing and
+`TYPESAFE_API_KEY` empty, so a `~/.config/aip/server.toml` or a key in your shell cannot change it. First time: `npx playwright install chromium`, or skip the download
 and drive an installed Google Chrome with `PLAYWRIGHT_CHANNEL=chrome npm run e2e`.
 
 Every spec runs twice, as two Playwright projects: `vite` against the dev server, then `bundle`

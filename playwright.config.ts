@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "@playwright/test";
 import { AIP_PORT, WEB_PORT, aipCommand } from "./e2e/aip";
 
@@ -28,6 +29,9 @@ export default defineConfig({
     {
       command: "npm run build && " +
         aipCommand(`server --backend filesystem --root .aip-e2e/root --port ${AIP_PORT} --inspector dist`),
+      // The server also reads ~/.config/aip/server.toml and the environment; the specs assume a
+      // server with no decision model and no tokens, so neither may leak in from this machine.
+      env: { AIP_CONFIG: path.resolve(".aip-e2e", "no-config.json"), TYPESAFE_API_KEY: "" },
       url: `http://localhost:${AIP_PORT}/catalog`,
       reuseExistingServer: false,
       stdout: "pipe",

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 
 export const AIP_PORT = Number(process.env.AIP_E2E_PORT ?? 8765);
@@ -23,12 +23,16 @@ export function aip(args: string, env: NodeJS.ProcessEnv = {}): string {
   return execSync(aipCommand(args), { env: { ...process.env, ...env }, encoding: "utf8" });
 }
 
-/** The bundled `billing-support` example, written out once by `aip-spec` (a dependency of `aip`). */
+/** The bundled `billing-support` example, written out fresh by `aip-spec` (a dependency of `aip`)
+ *  the first time a run asks for it: a copy cached across runs would outlive a format bump. */
+let example: string | undefined;
 export const EXAMPLE = () => {
+  if (example) return example;
   const out = path.resolve(import.meta.dirname, "..", ".aip-e2e", "example");
   const folder = path.join(out, "billing-support");
-  if (!existsSync(folder)) execSync(`uv run --project "${aipRepo()}" aip-spec example billing-support --out "${out}"`, { encoding: "utf8" });
-  return folder;
+  rmSync(folder, { recursive: true, force: true });
+  execSync(`uv run --project "${aipRepo()}" aip-spec example billing-support --out "${out}"`, { encoding: "utf8" });
+  return (example = folder);
 };
 
 /** The filesystem root the e2e server runs over (see playwright.config.ts). */
