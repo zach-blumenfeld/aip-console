@@ -19,7 +19,9 @@ serves the page on `http://localhost:4280/` (`--port`), and:
   relayed to the page as it arrives, over a server-sent event stream. Cancel kills the CLI and the
   scripts it started. So scripts run here, next to the data: their files land in the working directory
   (`--workdir`, default the current one), and decisions are resolved by this machine's decision model
-  (`aip config --decision-model`), or answered on the page when there is none.
+  (`aip config --decision-model`), or answered on the page when there is none. The CLI itself is started
+  from an empty directory and given the working directory as `--workdir`, so a folder in the working
+  directory named like a published skill (`./billing-support`) does not turn a served run into a local one.
 
 Without `--server`, the console uses the server `aip config` names. With a skill folder instead, runs are
 local (`aip run ./folder`) and the catalog, history and governance pages are hidden.

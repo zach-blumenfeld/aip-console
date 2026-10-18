@@ -23,8 +23,9 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -139,7 +140,7 @@ function stream(res, setup, args, input) {
   send("session", JSON.stringify({ session: id }));
 
   // Its own process group, so cancelling stops the scripts it started as well.
-  const child = spawn(setup.aip, args, { cwd: setup.workdir, env: setup.env, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(setup.aip, args, { cwd: setup.cwd, env: setup.env, detached: true, stdio: ["pipe", "pipe", "pipe"] });
   const session = { child, done: false, cancelled: false };
   sessions.set(id, session);
   let stderr = "";
@@ -215,7 +216,7 @@ function serveFile(req, res) {
 
 /** `aip info <ref> --json` and `--example-input`, for the run page's start form. */
 function skill(setup, ref) {
-  const run = (flag) => spawnSync(setup.aip, ["info", ref, flag], { cwd: setup.workdir, env: setup.env, encoding: "utf8" });
+  const run = (flag) => spawnSync(setup.aip, ["info", ref, flag], { cwd: setup.cwd, env: setup.env, encoding: "utf8" });
   const info = run("--json");
   if (info.error || info.status !== 0) {
     return { error: `${info.stderr || info.stdout || info.error?.message || ""}`.trim() || `aip info exited with ${info.status}` };
@@ -311,7 +312,12 @@ function main() {
 
   const env = { ...process.env };
   if (server) env.AIP_SERVER = server;
-  const setup = { mode, server, folder, workdir: args.workdir, aip: args.aip, aipVersion: aip, env };
+  // `aip` runs from an empty directory, never the workdir: `aip run billing-support` runs ./billing-support when
+  // that path exists, so a folder of the name in the workdir would turn a served run into a local one. The
+  // workdir reaches the run as `--workdir` (AIP_WORKDIR for its scripts).
+  const cwd = mkdtempSync(path.join(tmpdir(), "aip-console-"));
+  process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
+  const setup = { mode, server, folder, workdir: path.resolve(args.workdir), cwd, aip: args.aip, aipVersion: aip, env };
 
   const http = createServer();
   // Loopback only: the page can start runs on this machine.

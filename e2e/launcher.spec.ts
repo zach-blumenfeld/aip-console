@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
@@ -61,6 +61,40 @@ test("with no --server the console uses the server `aip config` names", async ()
     });
     const res = await fetch(`${url}console/config`);
     expect(await res.json()).toMatchObject({ mode: "server", server: SERVER, aip: { format: "0.6a0" }, minimum: "0.6a0" });
+  } finally {
+    child.kill();
+  }
+});
+
+test("a published name runs on the server even when the working directory has a folder of that name", async () => {
+  // `aip run billing-support` runs ./billing-support when it exists; the console runs `aip` elsewhere, so the
+  // catalog's run page still starts a served run, recorded in the server's history.
+  const workdir = path.join(E2E, "decoy-work");
+  cpSync(path.join(E2E, "v1", "billing-support"), path.join(workdir, "billing-support"), { recursive: true });
+  const child = spawn(process.execPath, [LAUNCHER, "--server", SERVER, "--port", "0", "--workdir", workdir],
+                      { env: { ...process.env, ...CLI_ENV } });
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      let out = "";
+      child.stdout.on("data", (d) => {
+        out += d;
+        const m = /http:\/\/localhost:\d+\//.exec(out);
+        if (m) resolve(m[0]);
+      });
+      child.on("exit", (code) => reject(new Error(`the console exited with ${code}`)));
+    });
+    const origin = url.replace(/\/$/, "");
+    const res = await fetch(`${url}console/run`, {
+      method: "POST", headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "billing-support", input: { message: "Was I billed twice? [decoy]" } }),
+    });
+    const lines = (await res.text()).split("\n").filter((l) => l.startsWith("data: {\"paused\"")).map((l) => JSON.parse(l.slice(6)));
+    expect(lines).toHaveLength(1);
+    const run = await fetch(`${SERVER}/runs/${lines[0].run_id}`);
+    expect(run.status).toBe(200);
+    expect(((await run.json()) as { name: string }).name).toBe("billing-support");
+    const info = (await (await fetch(`${url}console/skill?ref=billing-support`)).json()) as { info: { revision: string | null } };
+    expect(info.info.revision).toBeTruthy();                      // the published revision, not the folder's null
   } finally {
     child.kill();
   }
