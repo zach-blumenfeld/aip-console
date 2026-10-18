@@ -1,14 +1,14 @@
+import { consoleConfig } from "./console";
 import type {
-  AnswerRequest, ApiErrorBody, Capabilities, CatalogEntry, FileEntry, GovernanceQuery, GovernanceRow, NextNode,
-  ProcedureInfo, RunDetail, RunSummary, SearchHit, StepRequest, StepResponse,
+  ApiErrorBody, CatalogEntry, FileEntry, GovernanceQuery, GovernanceRow, ProcedureInfo, RunDetail, RunSummary, SearchHit,
 } from "./types";
 
-const SERVER_KEY = "aip.server";
 const TOKEN_KEY = "aip.token";
 
-/** The server URL. Empty means same origin: the dev proxy, or `aip server --inspector`. */
+/** The server the console was started for (`aip-console --server URL`, else `aip config`); the page calls it
+ *  directly, and the runs the console starts use the same one. Empty in folder mode, where nothing calls it. */
 export function serverUrl(): string {
-  return localStorage.getItem(SERVER_KEY) ?? "";
+  return consoleConfig().server ?? "";
 }
 
 /** The bearer token, kept in sessionStorage: the design (§11) says never beyond the session. */
@@ -16,10 +16,7 @@ export function token(): string {
   return sessionStorage.getItem(TOKEN_KEY) ?? "";
 }
 
-export function configure(server: string, token: string | null): void {
-  const url = server.trim().replace(/\/$/, "");
-  if (url) localStorage.setItem(SERVER_KEY, url);
-  else localStorage.removeItem(SERVER_KEY);
+export function setToken(token: string | null): void {
   if (token) sessionStorage.setItem(TOKEN_KEY, token);
   else sessionStorage.removeItem(TOKEN_KEY);
 }
@@ -73,15 +70,7 @@ export const api = {
     return { bytes: new Uint8Array(await res.arrayBuffer()), mediaType: res.headers.get("Content-Type") ?? "application/octet-stream" };
   },
 
-  // Execution: the same calls the CLI runner makes (aip.client.runner).
-  capabilities: (ref: string) => request<Capabilities>(`/procedures/${encodeURIComponent(ref)}/capabilities`),
-  /** What receives `payload` after step `after` (null = the start), routers already walked. */
-  peek: (ref: string, after: string | null, payload: Record<string, unknown>) =>
-    request<NextNode | null>(`/procedures/${encodeURIComponent(ref)}/peek`, { method: "POST", body: JSON.stringify({ after, payload }) }),
-  step: (ref: string, body: StepRequest) =>
-    request<StepResponse>(`/procedures/${encodeURIComponent(ref)}/step`, { method: "POST", body: JSON.stringify(body) }),
-  answer: (ref: string, body: AnswerRequest) =>
-    request<StepResponse>(`/procedures/${encodeURIComponent(ref)}/answer`, { method: "POST", body: JSON.stringify(body) }),
+  // Runs are driven by the `aip` CLI the console spawns (api/console.ts); the page only reads them.
 
   runs: (filter: { name?: string; status?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
@@ -93,17 +82,12 @@ export const api = {
   },
   run: (id: string) => request<RunDetail>(`/runs/${encodeURIComponent(id)}`),
 
-  // Governance (§7): the publish scope for pin, retire and thresholds; read for the corpus queries.
+  // Governance (§7): the publish scope for pin and retire; read for the corpus queries.
   /** Pin `revision` as what the bare name resolves to; null clears the pin (latest live again). */
   pin: (name: string, revision: string | null) =>
     request<{ name: string; pinned: string | null }>(`/catalog/${encodeURIComponent(name)}/pin`, { method: "POST", body: JSON.stringify({ revision }) }),
   retire: (name: string, revision: string) =>
     request<{ name: string; retired: string }>(`/catalog/${encodeURIComponent(name)}/retire`, { method: "POST", body: JSON.stringify({ revision }) }),
-  thresholds: (name: string) =>
-    request<{ name: string; thresholds: Record<string, number> }>(`/catalog/${encodeURIComponent(name)}/thresholds`),
-  /** Replaces the whole map: send every override that should remain. */
-  setThresholds: (name: string, thresholds: Record<string, number>) =>
-    request<{ name: string; thresholds: Record<string, number> }>(`/catalog/${encodeURIComponent(name)}/thresholds`, { method: "POST", body: JSON.stringify({ thresholds }) }),
   governance: () => request<GovernanceQuery[]>("/governance"),
   governanceQuery: (query: string, filter: { name?: string; window?: number; limit?: number } = {}) => {
     const q = new URLSearchParams();

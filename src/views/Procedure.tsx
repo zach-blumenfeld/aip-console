@@ -9,7 +9,7 @@ export function Procedure({ reference }: { reference: string }) {
   const [info, setInfo] = useState<ProcedureInfo | null>(null);
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Bumped after pin, retire or a threshold save: both fetches run again, the page stays up meanwhile.
+  // Bumped after pin or retire: both fetches run again, the page stays up meanwhile.
   const [version, setVersion] = useState(0);
   const name = reference.split("@")[0];
 
@@ -79,7 +79,7 @@ export function Procedure({ reference }: { reference: string }) {
         <StepCard key={s.name} step={s} isStart={s.name === info.start.step} isEnd={s.name === info.end.step}
                   inputs={byStep(info.inputs, s.name)} questions={byStep(info.questions, s.name)}
                   resources={byStep(info.resources, s.name)} branches={info.branches.filter((b) => b.router === s.name)}
-                  next={info.edges.find((e) => e.from === s.name)?.to} thresholds={info.thresholds} />
+                  next={info.edges.find((e) => e.from === s.name)?.to} />
       ))}
     </article>
   );
@@ -114,10 +114,9 @@ interface CardProps {
   step: StepDetail; isStart: boolean; isEnd: boolean;
   inputs: StepInput[]; questions: Question[]; resources: Resource[];
   branches: { value: string; to: string }[]; next?: string;
-  thresholds: Record<string, number>;
 }
 
-function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches, next, thresholds }: CardProps) {
+function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches, next }: CardProps) {
   return (
     <section className={`step-card kind-${step.kind}`} id={`step-${step.name}`}>
       <h3>
@@ -146,7 +145,7 @@ function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches
           <tbody>{questions.map((q) => (
             <tr key={q.name}>
               <td><code>{q.name}</code></td><td>{q.type}</td>
-              <td>{thresholds[q.name] !== undefined ? <>{thresholds[q.name]} <span className="muted">(override of {q.threshold})</span></> : q.threshold}</td>
+              <td>{q.threshold ?? <span className="muted">default</span>}</td>
               <td>{q.instructions}{q.criteria && <Criteria text={q.criteria} />}</td>
             </tr>
           ))}</tbody>
@@ -172,18 +171,13 @@ function Criteria({ text }: { text: string }) {
 
 interface GovernanceProps { info: ProcedureInfo; entry: CatalogEntry | null; onChanged: () => void }
 
-/** Pin and retire this revision, and the per-question threshold overrides stored for the name. All need the
- *  publish scope: a 403 points at the Server page, where the token is set. */
+/** Pin and retire this revision. Both need the publish scope: a 403 points at the Server page, where the token
+ *  is set. Thresholds are the author's, from SKILL.md, so there is nothing to override here. */
 function Governance({ info, entry, onChanged }: GovernanceProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmRetire, setConfirmRetire] = useState(false);
-  // Overrides as typed, keyed by question name; blank means "no override for this question".
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
-  useEffect(() => {
-    setOverrides(Object.fromEntries(Object.entries(info.thresholds).map(([q, v]) => [q, String(v)])));
-  }, [info.thresholds]);
 
   const pinned = entry?.pinned ?? null;
   const isPinned = pinned === info.revision;
@@ -202,18 +196,6 @@ function Governance({ info, entry, onChanged }: GovernanceProps) {
     } finally {
       setBusy(false);
     }
-  };
-
-  const saveThresholds = () => {
-    const map: Record<string, number> = {};
-    for (const [q, raw] of Object.entries(overrides)) {
-      if (raw.trim() === "") continue;
-      const n = Number(raw);
-      if (!Number.isFinite(n) || n < 0 || n > 1) { setError(`threshold for ${q} must be a number between 0 and 1`); return; }
-      map[q] = n;
-    }
-    void act("saving thresholds", () => api.setThresholds(info.name, map),
-             Object.keys(map).length ? `Saved ${Object.keys(map).length} ${Object.keys(map).length === 1 ? "override" : "overrides"}.` : "Cleared every override.");
   };
 
   const short = (r: string) => r.slice(0, 8);
@@ -261,36 +243,6 @@ function Governance({ info, entry, onChanged }: GovernanceProps) {
           )}
         </div>
 
-        <div>
-          <h3>Threshold overrides</h3>
-          <p className="muted small">
-            Stored for <code>{info.name}</code> across revisions and merged under every step's own <code>thresholds</code>. Blank keeps the author's value.
-          </p>
-          {info.questions.length === 0 ? <p className="muted">No decision questions.</p> : (
-            <table className="compact" aria-label="threshold overrides">
-              <thead><tr><th>question</th><th>step</th><th>author's</th><th>override</th></tr></thead>
-              <tbody>
-                {info.questions.map((q) => (
-                  <tr key={`${q.step}:${q.name}`}>
-                    <td><code>{q.name}</code></td>
-                    <td><code>{q.step}</code></td>
-                    <td className="num">{q.threshold ?? <span className="muted">—</span>}</td>
-                    <td>
-                      <input className="threshold" type="number" min={0} max={1} step={0.05} aria-label={`override for ${q.name}`}
-                             value={overrides[q.name] ?? ""} placeholder="none"
-                             onChange={(e) => setOverrides({ ...overrides, [q.name]: e.target.value })} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {info.questions.length > 0 && (
-            <div className="actions">
-              <button type="button" disabled={busy} onClick={saveThresholds}>Save thresholds</button>
-            </div>
-          )}
-        </div>
       </div>
       {note && <p className="muted" data-testid="governance-note">{note}</p>}
       {error && <p className="error" role="alert">{error}</p>}

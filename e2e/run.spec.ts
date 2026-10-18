@@ -1,100 +1,153 @@
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { AIP_PORT } from "./aip";
+import { SERVER, WORKDIR } from "./aip";
 
-// The e2e server has no decision model (no TYPESAFE_API_KEY), so `triage` pauses as
-// a manual decision and the console answers it through /answer; the router then
-// sends angry messages to the script and calm ones to the client task.
+// The run console drives `aip run --progress` and `aip resume --progress` through the console's process. The
+// CLI has no decision model here, so `triage` pauses for the page to answer; the router then sends angry
+// messages to the escalate script, which runs on this machine and files its ticket under the console's
+// working directory, and calm ones to the client task.
 
-async function startAndTriage(page: Page, message: string, tone: "angry" | "calm") {
+interface RunRecord {
+  status: string;
+  history: { step: string; kind: string; result: Record<string, unknown>; attribution?: { resolver: string } }[];
+}
+
+async function record(page: Page, runId: string): Promise<RunRecord> {
+  const res = await page.request.get(`${SERVER}/runs/${runId}`);
+  expect(res.ok()).toBeTruthy();
+  return (await res.json()) as RunRecord;
+}
+
+async function startAndTriage(page: Page, message: string, tone: "angry" | "calm"): Promise<string> {
   await page.goto("./#/run/billing-support");
   await expect(page.getByTestId("run-status")).toHaveText("not started");
   const start = page.getByTestId("pause-start");
-  await expect(start.getByTestId("payload")).toContainText('"message"');     // prefilled from example_input
+  await expect(start.getByTestId("payload")).toContainText('"message"');     // prefilled from the example input
   await start.getByLabel("message", { exact: true }).fill(message);
-  await expect(start.getByTestId("payload")).toContainText(message);
+  await expect(start.getByTestId("payload")).toContainText(message.slice(0, 20));
+  await start.getByRole("button", { name: "Start" }).click();
 
-  await start.getByRole("button", { name: "Step" }).click();
   const decision = page.getByTestId("pause-decision");
-  await expect(decision).toBeVisible();
+  await expect(decision).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("run-status")).toHaveText("paused");
+  await expect(decision.getByTestId("pause-state")).toContainText(message.slice(0, 20));
   await decision.getByRole("group", { name: "billing" }).getByRole("radio", { name: /^yes/ }).check();
   await decision.getByRole("group", { name: "tone" }).getByRole("radio", { name: new RegExp(`^${tone}`) }).check();
+  await expect(page.getByTestId("run-id")).toHaveText(/^[0-9a-f]{16}$/);
+  const runId = (await page.getByTestId("run-id").textContent())!.trim();
   await decision.getByRole("button", { name: "Answer" }).click();
-
-  const triage = page.locator('[data-testid="run-step"][data-step="triage"]');
-  await expect(triage).toBeVisible();
-  await expect(triage.locator('[data-question="tone"] [data-testid="answer-value"]')).toHaveText(`"${tone}"`);
-  await expect(triage.locator('[data-question="billing"] [data-testid="answer-value"]')).toHaveText("true");
-  await expect(triage).toContainText("answered by the client");
-  await expect(page.getByTestId("run-status")).toHaveText("running");
-  await expect(page.getByTestId("run-id")).toHaveText(/\S+/);
-  return (await page.getByTestId("run-id").textContent())!.trim();
+  return runId;
 }
 
-async function runsDone(page: Page): Promise<string[]> {
-  const res = await page.request.get(`http://localhost:${AIP_PORT}/runs?name=billing-support&status=done&limit=1000`);
-  expect(res.ok()).toBeTruthy();
-  return ((await res.json()) as { run_id: string }[]).map((r) => r.run_id);
+function ticketFile(id: unknown): string {
+  return path.join(WORKDIR, "tickets", `${id}.json`);
 }
 
-test("an angry message runs the escalation script server-side", async ({ page }) => {
-  const runId = await startAndTriage(page, "I was charged twice and I want my money back NOW or I cancel!", "angry");
+test("an angry message runs the escalation script on this machine", async ({ page }) => {
+  const message = "I was charged twice and I want my money back NOW or I cancel!";
+  const runId = await startAndTriage(page, message, "angry");
 
-  // A per-run threshold override rides along on every /step.
-  await page.getByLabel("threshold for tone").fill("0.9");
-  const stepRequest = page.waitForRequest((r) => r.url().endsWith("/step") && r.method() === "POST");
-  await page.getByTestId("pause-input").getByRole("button", { name: "Run to pause" }).click();
-  const body = (await stepRequest).postDataJSON();
-  expect(body.thresholds).toEqual({ tone: 0.9 });
-  expect(body.run_id).toBe(runId);
-  expect(body.after).toBe("triage");
+  await expect(page.getByTestId("run-status")).toHaveText("done", { timeout: 20_000 });
+  const trace = page.getByTestId("trace").getByRole("listitem");
+  await expect(trace).toHaveText([/triage.*decision.*manual/, /by-tone.*router.*escalate/, /escalate.*execution.*s$/]);
+  await expect(page.getByTestId("final-state")).toContainText(message);
 
+  // The server recorded what the client's script returned; the ticket file is on this side.
+  const run = await record(page, runId);
+  expect(run.status).toBe("done");
+  const escalate = run.history.find((h) => h.step === "escalate")!;
+  expect(escalate.result.queue).toBe("tier2");
+  const file = ticketFile(escalate.result.ticket_id);
+  expect(existsSync(file)).toBe(true);
+  expect(JSON.parse(readFileSync(file, "utf8")).message).toBe(message);
+
+  // The run is in the history, with the decision's attribution.
+  await page.getByTestId("run-done").getByRole("link", { name: "history" }).click();
+  await expect(page).toHaveURL(new RegExp(`#/runs/${runId}$`));
   await expect(page.getByTestId("run-status")).toHaveText("done");
-  await expect(page.getByTestId("branch-taken")).toContainText("escalate");
-  const escalate = page.locator('[data-testid="run-step"][data-step="escalate"]');
-  await expect(escalate.getByTestId("script-stdin")).toContainText('"tone": "angry"');
-  await expect(escalate.getByTestId("script-stdout")).toContainText('"ticket_id"');
-  await expect(page.getByTestId("final-state")).toContainText('"ticket_id"');
-  await expect(page.getByTestId("final-state")).toContainText('"queue": "tier2"');
-  await expect(page.getByTestId("trace").getByRole("listitem")).toHaveText([/triage/, /by-tone/, /escalate/, /end/]);
-  await expect(page.locator('[data-testid="run-step"][data-step="reply"]')).toHaveCount(0);
-
-  expect(await runsDone(page)).toContain(runId);
+  const triage = page.locator('[data-testid="run-step"][data-step="triage"]');
+  await expect(triage.getByTestId("attribution")).toHaveAttribute("data-resolver", "manual");
+  await expect(triage.getByTestId("attribution")).toContainText("resolver manual");
+  await expect(triage.locator('[data-question="tone"] [data-testid="answer-value"]')).toHaveText('"angry"');
+  await expect(page.locator('[data-testid="run-step"][data-step="escalate"]')).toContainText("ran on the client");
 });
 
-test("a calm message pauses as a client task that is answered in the UI", async ({ page }) => {
+test("a calm message pauses as a client task that is answered in the page", async ({ page }) => {
   const runId = await startAndTriage(page, "Hi, could you tell me why I was billed $12 this month?", "calm");
 
-  await page.getByTestId("pause-input").getByRole("button", { name: "Run to pause" }).click();
   const task = page.getByTestId("pause-client-task");
-  await expect(task).toBeVisible();
+  await expect(task).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("run-status")).toHaveText("paused");
-  await expect(page.getByTestId("branch-taken")).toContainText("reply");
-  const reply = page.locator('[data-testid="run-step"][data-step="reply"]');
-  await expect(reply.getByTestId("task")).toContainText("Write a short, calm reply");
-  await expect(reply.getByTestId("task")).toContainText("billed $12");                 // {message} rendered
-  await expect(reply.getByTestId("task")).toContainText("Refunds");                    // {assets[policy]} rendered
-  await expect(reply.getByTestId("references").getByRole("link")).toHaveText("references/help.md");
+  await expect(page.getByTestId("trace").getByRole("listitem")).toHaveText([/triage/, /by-tone.*reply/]);
+  await expect(task.getByTestId("task")).toContainText("Write a short, calm reply");
+  await expect(task.getByTestId("task")).toContainText("billed $12");                 // {message} rendered
+  await expect(task.getByTestId("task")).toContainText("Refunds");                    // the policy asset rendered
+  await expect(task.getByTestId("references")).toContainText("references/help.md");
+  await expect(task.getByTestId("pause-state")).toContainText('"tone": "calm"');
 
-  // The end step only declares `message`; the template asks for `reply` too, so it goes in through the payload.
-  const payload = task.getByTestId("payload");
-  const current = JSON.parse((await payload.inputValue())) as Record<string, unknown>;
-  expect(current.tone).toBe("calm");
-  await payload.fill(JSON.stringify({ ...current, reply: "Thanks for asking: the $12 is your monthly plan charge." }, null, 2));
-  await task.getByRole("button", { name: "Step" }).click();
+  // The answer carries only what `answer_with` asks for.
+  await task.getByLabel("reply", { exact: true }).fill("Thanks for asking: the $12 is your monthly plan charge.");
+  await expect(task.getByTestId("payload")).toHaveValue(/^\{\s*"reply": "Thanks for asking/);
+  await task.getByRole("button", { name: "Answer" }).click();
 
-  await expect(page.getByTestId("run-status")).toHaveText("done");
-  await expect(page.getByTestId("final-state")).toContainText("monthly plan charge");
-  await expect(page.getByTestId("final-state")).not.toContainText("ticket_id");
-  await expect(page.locator('[data-testid="run-step"][data-step="escalate"]')).toHaveCount(0);
-
-  expect(await runsDone(page)).toContain(runId);
+  await expect(page.getByTestId("run-status")).toHaveText("done", { timeout: 20_000 });
+  await expect(page.getByTestId("trace").getByRole("listitem")).toHaveText([/triage/, /by-tone/, /reply.*client_task/]);
+  await expect(page.getByTestId("final-state")).toContainText("billed $12");
+  const run = await record(page, runId);
+  expect(run.status).toBe("done");
+  expect(run.history.map((h) => h.step)).toEqual(["triage", "by-tone", "reply", "end"]);
 });
 
-test("an invalid start input is reported and the run is not started", async ({ page }) => {
+test("a failing script shows the error object, and retry resumes once the cause is fixed", async ({ page }) => {
+  const down = path.join(WORKDIR, "ticket-service-down");
+  writeFileSync(down, "");
+  try {
+    const runId = await startAndTriage(page, "[outage] Charged twice, fix it now or I cancel!", "angry");
+
+    const error = page.getByTestId("run-error");
+    await expect(error).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("run-status")).toHaveText("failed");
+    await expect(error.getByTestId("error-kind")).toHaveText("script_failed");
+    await expect(error.getByTestId("exit-code")).toHaveText("1");
+    await expect(error.getByTestId("error-stderr")).toHaveText("ticket service unreachable");
+    const object = JSON.parse((await error.getByTestId("error-object").textContent())!) as Record<string, unknown>;
+    expect(object).toMatchObject({ error: "script_failed", step: "escalate", script: "scripts/escalate.py", exit_code: 1,
+                                   run_id: runId, resumable: true });
+    expect((await record(page, runId)).status).toBe("failed");
+
+    rmSync(down);
+    await error.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByTestId("run-status")).toHaveText("done", { timeout: 20_000 });
+    await expect(page.getByTestId("trace").getByRole("listitem").last()).toHaveText(/escalate.*execution/);
+    const run = await record(page, runId);
+    expect(run.status).toBe("done");
+    expect(run.history.filter((h) => h.step === "escalate").map((h) => h.kind)).toEqual(["error", "execution"]);
+  } finally {
+    rmSync(down, { force: true });
+  }
+});
+
+test("cancel stops the running aip", async ({ page }) => {
+  await startAndTriage(page, "[slow] Charged twice, fix it now!", "angry");
+  await expect(page.getByTestId("run-running")).toBeVisible();
+  // Give the CLI time to reach the script, which sleeps for a minute.
+  await page.waitForTimeout(3_000);
+  await page.getByTestId("run-running").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("run-status")).toHaveText("cancelled", { timeout: 10_000 });
+  await expect(page.getByTestId("run-problem")).toContainText("Cancelled: aip stopped");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+});
+
+test("an invalid start input is reported and no run is opened", async ({ page }) => {
   await page.goto("./#/run/billing-support");
   await page.getByTestId("payload").fill("{}");
-  await page.getByRole("button", { name: "Step" }).click();
-  await expect(page.getByRole("alert")).toContainText("missing message");
+  await page.getByRole("button", { name: "Start" }).click();
+  const error = page.getByTestId("run-error");
+  await expect(error).toBeVisible({ timeout: 20_000 });
+  await expect(error.getByTestId("error-kind")).toHaveText("invalid_input");
+  await expect(error).toContainText("message");
   await expect(page.getByTestId("run-id")).toHaveCount(0);
+  await expect(error.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await expect(page.getByTestId("pause-start")).toBeVisible();          // fix the input and start again
 });

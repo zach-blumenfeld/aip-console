@@ -80,7 +80,6 @@ export interface ProcedureInfo {
   do_not_use_when: string[];
   anti_patterns: string[];
   example_input: Record<string, unknown>;
-  thresholds: Record<string, number>;
   start: { step: string; kind: StepKind };
   end: { step: string; kind: StepKind };
   steps: Record<string, StepKind>;
@@ -97,46 +96,22 @@ export interface ApiErrorBody {
   error: { kind: string; message: string; location?: string };
 }
 
-// ---------------------------------------------------------------- execution (§4.2, StepResponse)
+// ---------------------------------------------------------------- run history (GET /runs/{id})
 
-export interface Capabilities {
-  name: string;
-  revision: string;
-  decision_model: boolean;
-  executes_scripts: boolean;
-  persists_runs: boolean;
-  governance: boolean;
+/** Who answered a decision (B4): the client's decision model, or the client by hand. */
+export interface Attribution {
+  resolver: "typesafe" | "manual";
+  model: string | null;
+  /** Per question, the model's confidence in the answer it chose. */
+  confidence: Record<string, number> | null;
+  reviewed: boolean;
+  /** The model's answers before review, when reviewed. */
+  proposed?: Record<string, boolean | string | number>;
 }
 
-/** A decision question as `describe_next` and the peek endpoint hand it out. */
-export interface NextQuestion {
-  type: "noul" | "choice" | "score";
-  instructions?: string;
-  /** noul: {true, false} descriptions; choice: label -> description; score: one description per level. */
-  criteria?: Record<string, string | null> | (string | null)[];
-}
-
-/** `describe_next(node)`: what receives the next input. Routers list every branch's shape. */
-export interface NextRouter { step: string; kind: "router"; branch_on: string; branches: Record<string, NextNode | null> }
-export interface NextStep {
-  step: string;
-  kind: Exclude<StepKind, "router">;
-  inputs: Record<string, string>;
-  questions?: Record<string, NextQuestion>;
-}
-export type NextNode = NextRouter | NextStep;
-
-/** One answer of a decision model, or a manual one from `/answer`. */
-export type Answer =
-  | { type: "noul"; noul: number }
-  | { type: "choice"; choice: string; confidence: number; probabilities: Record<string, number> }
-  | { type: "score"; score: number; confidence: number; legend: Record<string, unknown>; probabilities: Record<string, number> }
-  | { type: "noul" | "choice" | "score"; manual: boolean | string | number };
-
+/** A decision's recorded result: one collapsed value per question. */
 export interface DecisionResult {
-  model?: string;
-  usage?: { input_tokens: number | null; output_tokens: number | null };
-  answers: Record<string, Answer>;
+  answers: Record<string, boolean | string | number>;
 }
 
 export interface ClientTaskResult {
@@ -150,7 +125,11 @@ export interface HistoryEntry {
   kind: StepKind | "error";
   input: Record<string, unknown>;
   result: Record<string, unknown>;
-  manual?: boolean;
+  /** Decisions: who answered. */
+  attribution?: Attribution;
+  /** Execution steps: wall time on the client that ran the script. */
+  seconds?: number;
+  /** Errors: the kind of the step that failed. */
   step_kind?: StepKind;
 }
 
@@ -163,37 +142,7 @@ export interface ReviewItem {
   probabilities?: Record<string, number>;
 }
 
-/** `POST /procedures/{ref}/step|answer`. */
-export interface StepResponse {
-  ran: string;
-  kind: StepKind;
-  result: Record<string, unknown>;
-  suggested: Record<string, unknown>;
-  review: ReviewItem[];
-  next: NextNode | null;
-  history: HistoryEntry[];
-  run_id: string | null;
-  name: string;
-  revision: string;
-}
-
-export interface StepRequest {
-  after: string | null;
-  payload: Record<string, unknown>;
-  history: HistoryEntry[];
-  thresholds?: Record<string, number>;
-  run_id?: string | null;
-}
-
-export interface AnswerRequest {
-  after: string | null;
-  payload: Record<string, unknown>;
-  history: HistoryEntry[];
-  answers: Record<string, boolean | string | number>;
-  run_id?: string | null;
-}
-
-export type RunStatus = "running" | "paused" | "done" | "error";
+export type RunStatus = "running" | "paused" | "done" | "failed";
 
 export interface RunSummary {
   run_id: string;
@@ -205,10 +154,13 @@ export interface RunSummary {
   steps: number;
 }
 
-/** Why a run is paused (`run_status` in the server): the client task to do, or the answers to review. */
+/** Where a run waits, in the client's pause shape (aip docs/cli-json.md) with `kind` for `paused`. */
 export type RunPause =
-  | { kind: "client_task"; step: string; task: string | null; references: { uri: string; description: string }[]; expects: Record<string, string> }
-  | { kind: "review"; step: string; review: ReviewItem[]; expects: Record<string, string> };
+  | { kind: "client_task"; step: string; task: string; state: Record<string, unknown>; references: { uri: string; description: string }[]; answer_with: Record<string, string> }
+  | { kind: "decision"; step: string; state: Record<string, unknown>; questions: Record<string, unknown> }
+  | { kind: "execute"; step: string; script: string }
+  | { kind: "error"; step: string; error: string }
+  | { kind: "done"; state: Record<string, unknown>; step?: undefined };
 
 /** `GET /runs/{id}`: the summary fields plus the full history and the pause block. */
 export interface RunDetail {

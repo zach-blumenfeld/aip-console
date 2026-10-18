@@ -1,35 +1,30 @@
-import type { Answer, ClientTaskResult, DecisionResult, HistoryEntry, ProcedureInfo, ReviewItem } from "../api/types";
-import { collapse, crossed, distribution } from "../run/protocol";
+import type { Attribution, ClientTaskResult, DecisionResult, HistoryEntry, ProcedureInfo } from "../api/types";
 import { href } from "../router";
 
 interface Props {
   entry: HistoryEntry;
   info: ProcedureInfo;
-  /** The state after this step: the server's `suggested` for the step that ran last. */
+  /** The state after this step, when the next entry shows it. */
   after?: Record<string, unknown>;
-  /** The review items the server attached to this step's response. */
-  review?: ReviewItem[];
-  /** Thresholds in force for this run: author defaults, server overrides, then this run's. */
-  thresholds: Record<string, number>;
   index: number;
 }
 
-/** One step of a run: what it received, what it did, and the state it left. Read-only; I4 reuses it. */
-export function RunStepCard({ entry, info, after, review = [], thresholds, index }: Props) {
+/** One step of a recorded run: what it received, what it did, and who did it. Read-only. */
+export function RunStepCard({ entry, info, after, index }: Props) {
   const kind = entry.kind === "error" ? entry.step_kind ?? "error" : entry.kind;
   return (
     <section className={`step-card run-card kind-${kind}`} data-testid="run-step" data-step={entry.step} data-kind={entry.kind}>
       <h3>
         <span className="muted">{index}. </span><code>{entry.step}</code> <span className="kind-tag">{kind}</span>
-        {entry.manual && <span className="muted"> · answered by the client</span>}
+        {entry.kind === "execution" && entry.seconds !== undefined && <span className="muted"> · ran on the client in {entry.seconds}s</span>}
         {entry.kind === "error" && <span className="error"> · failed</span>}
       </h3>
-      {entry.kind === "decision" && <Decision result={entry.result as unknown as DecisionResult} info={info} review={review} thresholds={thresholds} />}
+      {entry.kind === "decision" && <Decision result={entry.result as unknown as DecisionResult} info={info} attribution={entry.attribution} />}
       {entry.kind === "router" && <Router entry={entry} />}
       {entry.kind === "execution" && <Execution entry={entry} info={info} />}
       {entry.kind === "client_task" && <ClientTask result={entry.result as unknown as ClientTaskResult} info={info} />}
       {entry.kind === "end" && <pre data-testid="final-state">{JSON.stringify(entry.result, null, 2)}</pre>}
-      {entry.kind === "error" && <p className="error" data-testid="step-error">{String(entry.result.error)}</p>}
+      {entry.kind === "error" && <ErrorResult result={entry.result} />}
       {entry.kind !== "end" && entry.kind !== "router" && (
         <details className="states">
           <summary>state before{after ? " and after" : ""}</summary>
@@ -43,55 +38,37 @@ export function RunStepCard({ entry, info, after, review = [], thresholds, index
   );
 }
 
-function Decision({ result, info, review, thresholds }: { result: DecisionResult; info: ProcedureInfo; review: ReviewItem[]; thresholds: Record<string, number> }) {
+function Decision({ result, info, attribution }: { result: DecisionResult; info: ProcedureInfo; attribution?: Attribution }) {
   const byName = new Map(info.questions.map((q) => [q.name, q]));
+  const who = attribution ?? { resolver: "manual", model: null, confidence: null, reviewed: false };
   return (
     <>
-      {result.model && <p className="muted">model {result.model}{result.usage ? ` · ${result.usage.input_tokens ?? "?"} in / ${result.usage.output_tokens ?? "?"} out tokens` : ""}</p>}
+      <p data-testid="attribution" data-resolver={who.resolver}>
+        resolver <strong>{who.resolver}</strong>
+        {who.resolver === "manual" ? <span className="muted"> · answered by the client, no decision model</span>
+          : <span className="muted">{who.model ? ` · model ${who.model}` : ""}{who.reviewed ? " · reviewed" : " · not reviewed"}</span>}
+      </p>
       <table className="compact answers" aria-label="answers">
-        <thead><tr><th>question</th><th>answer</th><th>distribution</th><th>threshold</th></tr></thead>
+        <thead><tr><th>question</th><th>answer</th><th>confidence</th><th>threshold</th></tr></thead>
         <tbody>
-          {Object.entries(result.answers).map(([name, answer]) => {
-            const limit = thresholds[name] ?? byName.get(name)?.threshold ?? undefined;
-            const check = crossed(answer, limit);
-            const flagged = review.some((r) => r.question === name) || check?.flagged === true;
+          {Object.entries(result.answers).map(([name, value]) => {
+            const proposed = who.proposed?.[name];
+            const overridden = proposed !== undefined && proposed !== value;
             return (
-              <tr key={name} data-testid="answer" data-question={name} data-flagged={flagged ? "true" : "false"}>
+              <tr key={name} data-testid="answer" data-question={name}>
                 <td><code>{name}</code><div className="muted small">{byName.get(name)?.instructions}</div></td>
-                <td><code data-testid="answer-value">{JSON.stringify(collapse(answer))}</code>{"manual" in answer && <span className="muted"> · manual</span>}</td>
-                <td><Distribution answer={answer} /></td>
                 <td>
-                  {check === null ? <span className="muted">—</span> : (
-                    <>
-                      {limit ?? <span className="muted">default</span>}
-                      {flagged ? <span className="status-tag flagged"> crossed</span> : <span className="muted small"> ok</span>}
-                      <div className="muted small">{check.reason}</div>
-                    </>
-                  )}
+                  <code data-testid="answer-value">{JSON.stringify(value)}</code>
+                  {overridden && <span className="muted"> · overrode the model's <code>{JSON.stringify(proposed)}</code></span>}
                 </td>
+                <td>{who.confidence?.[name] !== undefined ? `${(who.confidence[name] * 100).toFixed(1)}%` : <span className="muted">—</span>}</td>
+                <td>{byName.get(name)?.threshold ?? <span className="muted">default</span>}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </>
-  );
-}
-
-function Distribution({ answer }: { answer: Answer }) {
-  const rows = distribution(answer);
-  if (rows.length === 0) return <span className="muted">—</span>;
-  const chosen = String(collapse(answer));
-  return (
-    <ul className="dist">
-      {rows.map(([label, p]) => (
-        <li key={label} className={label === chosen ? "chosen" : undefined}>
-          <span className="bar" style={{ width: `${Math.round(p * 100)}%` }} />
-          <code>{label}</code> <span className="muted">{(p * 100).toFixed(1)}%</span>
-        </li>
-      ))}
-      {"confidence" in answer && <li className="muted small">confidence {(answer.confidence * 100).toFixed(1)}%</li>}
-    </ul>
   );
 }
 
@@ -110,8 +87,8 @@ function Execution({ entry, info }: { entry: HistoryEntry; info: ProcedureInfo }
   return (
     <div className="io-pair">
       <div>
-        <h4>stdin <span className="muted small">currentState{assets.length ? `, assets ${assets.map((a) => a.replace(/^.*\//, "").replace(/\.[^.]+$/, "")).join(", ")} (loaded server-side)` : ""}, expects</span></h4>
-        <pre data-testid="script-stdin">{JSON.stringify({ currentState: entry.input }, null, 2)}</pre>
+        <h4>stdin <span className="muted small">state{assets.length ? `, assets ${assets.map((a) => a.replace(/^.*\//, "").replace(/\.[^.]+$/, "")).join(", ")}` : ""}, expects</span></h4>
+        <pre data-testid="script-stdin">{JSON.stringify({ state: entry.input }, null, 2)}</pre>
         {step?.script && <p className="muted small">script <code>{step.script}</code></p>}
       </div>
       <div>
@@ -119,6 +96,15 @@ function Execution({ entry, info }: { entry: HistoryEntry; info: ProcedureInfo }
         <pre data-testid="script-stdout">{JSON.stringify(entry.result, null, 2)}</pre>
       </div>
     </div>
+  );
+}
+
+function ErrorResult({ result }: { result: Record<string, unknown> }) {
+  return (
+    <>
+      <p className="error" data-testid="step-error">{String(result.error)}</p>
+      {typeof result.stderr === "string" && result.stderr && <pre data-testid="step-stderr">{result.stderr}</pre>}
+    </>
   );
 }
 

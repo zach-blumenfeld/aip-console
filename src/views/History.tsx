@@ -6,7 +6,7 @@ import { RunStepCard } from "./RunStepCard";
 import { describe } from "./Source";
 import { StepGraph } from "./StepGraph";
 
-const STATUSES: RunStatus[] = ["running", "paused", "done", "error"];
+const STATUSES: RunStatus[] = ["running", "paused", "done", "failed"];
 
 /** View 4a: the runs the server persisted, filtered by name and status (`GET /runs`). */
 export function Runs({ name, status }: { name?: string; status?: string }) {
@@ -97,10 +97,7 @@ export function RunPage({ id }: { id: string }) {
   if (!run || !info) return <p className="muted">Loading run {id}…</p>;
 
   const ref = `${info.name}@${info.revision}`;
-  const thresholds: Record<string, number> = {};
-  for (const q of info.questions) if (q.threshold !== null) thresholds[q.name] = q.threshold;
-  Object.assign(thresholds, info.thresholds);
-  const { pause } = run;
+  const pause = run.status === "paused" || run.status === "failed" ? run.pause : null;
 
   return (
     <article className="run history-run">
@@ -121,23 +118,21 @@ export function RunPage({ id }: { id: string }) {
         <div>
           {run.history.length === 0 && <p className="muted">This run has no history yet.</p>}
           {run.history.map((entry, i) => (
-            <RunStepCard key={i} entry={entry} info={info} thresholds={thresholds} index={i + 1}
-                         after={afterOf(run.history, i)}
-                         review={pause?.kind === "review" && pause.step === entry.step && i === run.history.length - 1 ? pause.review : []} />
+            <RunStepCard key={i} entry={entry} info={info} index={i + 1} after={afterOf(run.history, i)} />
           ))}
           {pause && (
             <section className="pause" data-testid="run-pause">
-              <h2>Paused at <code>{pause.step}</code></h2>
+              <h2>{pause.kind === "error" ? "Failed at" : "Paused at"} <code>{pause.step}</code></h2>
               {pause.kind === "client_task" && (
                 <p className="muted">
                   Waiting for the client to do the task above and produce{" "}
-                  {Object.keys(pause.expects).length ? Object.keys(pause.expects).map((k, i) => <span key={k}>{i ? ", " : ""}<code>{k}</code></span>) : "the next input"}.
+                  {Object.keys(pause.answer_with).map((k, i) => <span key={k}>{i ? ", " : ""}<code>{k}</code></span>)}.
                 </p>
               )}
-              {pause.kind === "review" && (
-                <p className="muted">Waiting for the client to confirm or override {pause.review.map((r) => <code key={r.question}>{r.question} </code>)} before the next step.</p>
-              )}
-              <p className="muted small">Runs are resumed from the client that holds them; this page only replays.</p>
+              {pause.kind === "decision" && <p className="muted">Waiting for the client to answer the decision's questions.</p>}
+              {pause.kind === "execute" && <p className="muted">Waiting for the client to run <code>{pause.script}</code> and report.</p>}
+              {pause.kind === "error" && <p className="muted"><code>{pause.error}</code>: the run kept the state before this step; <code>aip resume {run.run_id}</code> retries it.</p>}
+              <p className="muted small">Runs are resumed from the client that started them (the run console, or <code>aip resume</code>); this page only replays.</p>
             </section>
           )}
           {run.status === "done" && (
