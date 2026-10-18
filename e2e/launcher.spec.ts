@@ -27,14 +27,14 @@ test("an old aip on the PATH is refused with the version it needs", () => {
   const old = fakeAip("old-aip", 'echo "aip 0.5a1 format 0.5a1"');
   const out = launch(["--server", SERVER, "--port", "0"], { PATH: `${old}:${process.env.PATH}` });
   expect(out.status).toBe(1);
-  expect(out.stderr).toContain("aip-console needs aip 0.6a0.dev0 or newer");
+  expect(out.stderr).toContain("aip-console needs aip 0.6a0 or newer");
   expect(out.stderr).toContain("is aip 0.5a1");
 
   // 0.5a1 itself had no --version at all: refused the same way.
   const older = fakeAip("older-aip", "echo \"aip: unknown command '$1'\" >&2; exit 1");
   const before = launch(["--server", SERVER, "--port", "0"], { PATH: `${older}:${process.env.PATH}` });
   expect(before.status).toBe(1);
-  expect(before.stderr).toContain("aip-console needs aip 0.6a0.dev0 or newer");
+  expect(before.stderr).toContain("aip-console needs aip 0.6a0 or newer");
   expect(before.stderr).toContain("unknown command");
 });
 
@@ -60,7 +60,7 @@ test("with no --server the console uses the server `aip config` names", async ()
       child.on("exit", (code) => reject(new Error(`the console exited with ${code}`)));
     });
     const res = await fetch(`${url}console/config`);
-    expect(await res.json()).toMatchObject({ mode: "server", server: SERVER, aip: { format: "0.6a0" }, minimum: "0.6a0.dev0" });
+    expect(await res.json()).toMatchObject({ mode: "server", server: SERVER, aip: { format: "0.6a0" }, minimum: "0.6a0" });
   } finally {
     child.kill();
   }

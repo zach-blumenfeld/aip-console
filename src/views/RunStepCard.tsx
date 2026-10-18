@@ -5,17 +5,15 @@ import { href } from "../router";
 interface Props {
   entry: HistoryEntry;
   info: ProcedureInfo;
-  /** The entries recorded after this one, where a client task's outputs show up as later steps' inputs. */
-  later: HistoryEntry[];
   index: number;
 }
 
 type State = Record<string, unknown>;
 
 /** One step of a recorded run: the declared keys it read and added, what it did, and where it ran. Read-only. */
-export function RunStepCard({ entry, info, later, index }: Props) {
+export function RunStepCard({ entry, info, index }: Props) {
   const kind = entry.kind === "error" ? entry.step_kind ?? "error" : entry.kind;
-  const io = stateIO(entry, info, later);
+  const io = stateIO(entry, info);
   return (
     <section className={`step-card run-card kind-${kind}`} data-testid="run-step" data-step={entry.step} data-kind={entry.kind}>
       <h3>
@@ -37,11 +35,6 @@ export function RunStepCard({ entry, info, later, index }: Props) {
         <div>
           <h4>state out <span className="muted small">{io.outNote}</span></h4>
           {io.out && <pre data-testid="state-out">{JSON.stringify(io.out, null, 2)}</pre>}
-          {io.missing.length > 0 && (
-            <p className="muted small" data-testid="state-out-unrecorded">
-              {io.missing.map((k, i) => <span key={k}>{i ? ", " : ""}<code>{k}</code></span>)}: answered by the client, not in the server's record
-            </p>
-          )}
         </div>
       </div>
     </section>
@@ -70,32 +63,23 @@ function Machine({ entry }: { entry: HistoryEntry }) {
 
 /** The declared keys a step read and added. A step sees only its `inputs`, so the history's `input` is the state
  *  in (an error entry keeps the whole state before the step: projected here). Out is the step's outputs: a
- *  script's stdout, a decision's answers, a client task's answer (the server records the task, not the answer, so
- *  its keys are found in later steps' inputs when one read them); routers and the end step add nothing. */
-function stateIO(entry: HistoryEntry, info: ProcedureInfo, later: HistoryEntry[]) {
+ *  script's stdout, a decision's answers, a client task's answer; routers and the end step add nothing. */
+function stateIO(entry: HistoryEntry, info: ProcedureInfo) {
   const step = entry.step;
   const inKeys = inputsOf(info, step);
   const pick = (state: State, keys: string[]) => Object.fromEntries(keys.filter((k) => k in state).map((k) => [k, state[k]]));
   const input = entry.kind === "error" ? pick(entry.input, inKeys) : entry.input;
   const outKeys = outputsOf(info, step);
   let out: State | null = null;
-  let missing: string[] = [];
   let outNote = outKeys.join(", ");
   if (entry.kind === "execution") out = entry.result;
   else if (entry.kind === "decision") out = (entry.result as unknown as DecisionResult).answers;
-  else if (entry.kind === "client_task") {
-    out = {};
-    for (const k of outKeys) {
-      const seen = later.find((h) => h.kind !== "error" && k in h.input);
-      if (seen) out[k] = seen.input[k];
-      else missing.push(k);
-    }
-    if (!Object.keys(out).length) out = null;
-  } else if (entry.kind === "router") outNote = "adds nothing; the branch is in the history";
+  else if (entry.kind === "client_task") out = (entry.result as unknown as ClientTaskResult).answer;
+  else if (entry.kind === "router") outNote = "adds nothing; the branch is in the history";
   else if (entry.kind === "end") outNote = "the procedure's result";
-  else if (entry.kind === "error") { outNote = "nothing: the step failed"; missing = []; }
+  else if (entry.kind === "error") outNote = "nothing: the step failed";
   if (entry.kind === "end") out = entry.result;
-  return { in: input, inKeys, out, outNote, missing };
+  return { in: input, inKeys, out, outNote };
 }
 
 function Decision({ result, info, attribution }: { result: DecisionResult; info: ProcedureInfo; attribution?: Attribution }) {

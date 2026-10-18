@@ -91,7 +91,12 @@ export function RunPage({ id }: { id: string }) {
       .catch((e: unknown) => setError(describe(e)));
   }, [id]);
 
-  const trace = useMemo(() => traceOf(run?.history ?? []), [run]);
+  // A paused run waits at a step it has not recorded yet (a step's entry is written once it is answered): the
+  // trace ends there.
+  const trace = useMemo(() => {
+    const waiting = run?.pause && run.pause.kind !== "error" ? [{ step: run.pause.step } as HistoryEntry] : [];
+    return traceOf([...(run?.history ?? []), ...waiting]);
+  }, [run]);
 
   if (error) return <p className="error" role="alert">{error}</p>;
   if (!run || !info) return <p className="muted">Loading run {id}…</p>;
@@ -118,16 +123,19 @@ export function RunPage({ id }: { id: string }) {
         <div>
           {run.history.length === 0 && <p className="muted">This run has no history yet.</p>}
           {run.history.map((entry, i) => (
-            <RunStepCard key={i} entry={entry} info={info} index={i + 1} later={run.history.slice(i + 1)} />
+            <RunStepCard key={i} entry={entry} info={info} index={i + 1} />
           ))}
           {pause && (
             <section className="pause" data-testid="run-pause">
               <h2>{pause.kind === "error" ? "Failed at" : "Paused at"} <code>{pause.step}</code></h2>
               {pause.kind === "client_task" && (
-                <p className="muted">
-                  Waiting for the client to do the task above and produce{" "}
-                  {Object.keys(pause.answer_with).map((k, i) => <span key={k}>{i ? ", " : ""}<code>{k}</code></span>)}.
-                </p>
+                <>
+                  <p className="muted">
+                    Waiting for the client to do this task and produce{" "}
+                    {Object.keys(pause.answer_with).map((k, i) => <span key={k}>{i ? ", " : ""}<code>{k}</code></span>)}.
+                  </p>
+                  <pre className="task" data-testid="task">{pause.task}</pre>
+                </>
               )}
               {pause.kind === "decision" && <p className="muted">Waiting for the client to answer the decision's questions.</p>}
               {pause.kind === "execute" && <p className="muted">Waiting for the client to run <code>{pause.script}</code> and report.</p>}

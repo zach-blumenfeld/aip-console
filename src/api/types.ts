@@ -129,9 +129,11 @@ export interface DecisionResult {
   answers: Record<string, boolean | string | number>;
 }
 
+/** A client task's recorded result, written when the client answered: the task it was given and its answer. */
 export interface ClientTaskResult {
   task: string;
   references: { uri: string; description: string }[];
+  answer: Record<string, unknown>;
 }
 
 /** One history entry: what a step received and produced. Routers record the branch they took. */

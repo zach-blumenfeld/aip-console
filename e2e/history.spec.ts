@@ -54,7 +54,8 @@ test("the calm run's trace highlights the client task, paused and then done", as
   await expect(page.getByTestId("run-status")).toHaveText("paused");
   await expectTrace(page, ["triage", "by-tone", "reply"], ["escalate", "end"], [["triage", "by-tone"], ["by-tone", "reply"]]);
   await expect(page.getByTestId("run-pause")).toContainText("Paused at reply");
-  await expect(page.locator('[data-testid="run-step"][data-step="reply"]').getByTestId("task")).toContainText("billed $12");
+  await expect(page.locator('[data-testid="run-step"][data-step="reply"]')).toHaveCount(0);   // recorded once answered
+  await expect(page.getByTestId("run-pause").getByTestId("task")).toContainText("billed $12");
 
   // Finish it the way the console would, then the page replays the whole run.
   const done = aipJson(["resume", paused.run_id], { reply: "Thanks for asking: the $12 is your monthly plan charge." });
@@ -65,6 +66,9 @@ test("the calm run's trace highlights the client task, paused and then done", as
                     [["triage", "by-tone"], ["by-tone", "reply"], ["reply", "end"]]);
   await expect(page.getByTestId("final-state")).toContainText("billed $12");
   await expect(page.getByTestId("run-pause")).toHaveCount(0);
+  const reply = page.locator('[data-testid="run-step"][data-step="reply"]');
+  await expect(reply.getByTestId("task")).toContainText("billed $12");
+  expect(JSON.parse(await reply.getByTestId("state-out").innerText())).toEqual({ reply: "Thanks for asking: the $12 is your monthly plan charge." });
 });
 
 test("the runs list filters by name and status and links to the run page", async ({ page }) => {

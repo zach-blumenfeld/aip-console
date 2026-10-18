@@ -110,7 +110,7 @@ test("a run shows each step's declared state in and out and the machine that ran
   expect(JSON.parse(await card("end").getByTestId("state-out").innerText())).toEqual({ message });
 });
 
-test("a run the console drove names this machine; a client task's answer is shown as unrecorded", async ({ page }) => {
+test("a run the console drove names this machine; a client task's answer is in the record", async ({ page }) => {
   const angry = aipJson(["run", "billing-support"], { message: "I was double charged, fix it NOW" }) as { run_id: string };
   const done = aipJson(["resume", angry.run_id], { billing: true, tone: "angry" }) as { run_id: string; done?: boolean };
   expect(done.done).toBe(true);
@@ -127,7 +127,8 @@ test("a run the console drove names this machine; a client task's answer is show
   const reply = page.locator('[data-testid="run-step"][data-step="reply"]');
   await expect(reply.getByTestId("ran-on")).toHaveText("performed by the client");
   expect(JSON.parse(await reply.getByTestId("state-in").innerText())).toEqual({ message: "Why was I billed $12?", tone: "calm" });
-  await expect(reply.getByTestId("state-out-unrecorded")).toContainText("reply");
+  expect(JSON.parse(await reply.getByTestId("state-out").innerText())).toEqual({ reply: "That is your monthly plan." });
+  await expect(reply.getByTestId("task")).toContainText("Why was I billed $12?");
 });
 
 test("a failed run shows the client's stderr on the run and in failing-scripts, beside both resolver kinds", async ({ page, request }) => {

@@ -28,8 +28,9 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The oldest `aip` this console speaks to: the CLI JSON contract of format 0.6a0 (docs/cli-json.md). */
-export const MINIMUM_AIP = "0.6a0.dev0";
+/** The oldest `aip` this console speaks to: the CLI JSON contract of format 0.6a0 (docs/cli-json.md), and a
+ *  history whose client-task entries carry the answer. */
+export const MINIMUM_AIP = "0.6a0";
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const TYPES = {
