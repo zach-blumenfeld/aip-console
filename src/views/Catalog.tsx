@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
-import type { CatalogEntry, SearchHit } from "../api/types";
+import type { CatalogEntry, Requires, SearchHit } from "../api/types";
 import { href } from "../router";
+import { requiresText } from "./Requires";
 
 export function Catalog() {
   const [entries, setEntries] = useState<CatalogEntry[] | null>(null);
@@ -11,7 +12,15 @@ export function Catalog() {
 
   const fail = (e: unknown) => setError(e instanceof ApiError ? `${e.kind}: ${e.message}` : String(e));
 
+  // What each name's resolved revision needs on the machine that runs its scripts; the listing does not carry it.
+  const [requires, setRequires] = useState<Record<string, Requires | null>>({});
+
   useEffect(() => { api.catalog().then(setEntries).catch(fail); }, []);
+  useEffect(() => {
+    for (const e of entries ?? []) {
+      api.info(e.name).then((info) => setRequires((r) => ({ ...r, [e.name]: info.requires }))).catch(() => undefined);
+    }
+  }, [entries]);
 
   // Search replaces the table while the query is non-empty; debounced so typing
   // does not fire a request per keystroke.
@@ -52,7 +61,7 @@ export function Catalog() {
       ) : entries === null ? <p className="muted">Loading catalog…</p>
         : entries.length === 0 ? <p className="muted">The catalog is empty.</p> : (
           <table aria-label="catalog">
-            <thead><tr><th>Name</th><th>Description</th><th>Latest</th><th>Revisions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Description</th><th>Latest</th><th>Revisions</th><th>Requires</th></tr></thead>
             <tbody>
               {entries.map((e) => (
                 <tr key={e.name}>
@@ -60,6 +69,7 @@ export function Catalog() {
                   <td>{e.description}</td>
                   <td><code>{e.latest.slice(0, 8)}</code>{e.pinned ? " (pinned)" : ""}</td>
                   <td>{e.revisions.length}</td>
+                  <td data-testid="catalog-requires">{e.name in requires ? <code>{requiresText(requires[e.name])}</code> : <span className="muted">…</span>}</td>
                 </tr>
               ))}
             </tbody>

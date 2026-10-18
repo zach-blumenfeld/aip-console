@@ -9,6 +9,7 @@
   --execution: #2e8b57;
   --client_task: #a0522d;
   --end: #777;
+  --data: #8a4fbf;
 }
 body { margin: 0; }
 header {
@@ -58,6 +59,20 @@ ul.criteria { margin: 0.25rem 0 0; padding-left: 1.2rem; }
 .step-graph .edge { color: color-mix(in srgb, currentColor 55%, transparent); }
 .step-graph .edge.taken { color: currentColor; }
 .step-graph .branch-label { font-size: 11px; fill: currentColor; paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
+.step-graph.data-mode .edge { color: color-mix(in srgb, currentColor 22%, transparent); }
+.step-graph.data-mode .branch-label { opacity: 0.5; }
+.step-graph .data-edge { color: var(--data); }
+.step-graph .data-arrow { fill: var(--data); }
+.step-graph .data-label { font-size: 11px; fill: var(--data); paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
+.step-graph .input-node rect { fill: var(--fill); stroke: var(--data); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.flow-toggle { display: inline-flex; gap: 0.75rem; font-size: 0.9rem; }
+.machine { font-size: 0.85rem; }
+.state-io h4 { margin: 0.25rem 0; font-size: 0.85rem; }
+.requires-list { margin: 0.25rem 0; padding-left: 1.25rem; }
+pre.stderr { max-height: 8rem; margin: 0; font-size: 0.8rem; }
+.resolver-bar { display: inline-flex; height: 0.7rem; width: 8rem; border: 1px solid var(--line); vertical-align: middle; }
+.resolver-bar .model { background: var(--decision); }
+.resolver-bar .manual { background: var(--router); }
 .node-link { color: inherit; }
 
 .step-card { border: 1px solid var(--line); border-left: 4px solid var(--kind, var(--line)); border-radius: 6px; padding: 0.5rem 0.9rem; margin: 0.6rem 0; }

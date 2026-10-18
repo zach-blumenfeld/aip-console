@@ -24,7 +24,9 @@ export function Governance({ name }: { name?: string }) {
     <article className="governance">
       <h1>Governance</h1>
       <p className="muted">
-        What the corpus says about the procedures and their runs. Pin, retire and threshold overrides live on each procedure's page.
+        What the corpus says about the procedures and their runs. Decisions, scripts and tasks run on the clients, and
+        each client reports who answered and how a script ended, so these lists cover every machine that ran a
+        procedure. Pin and retire live on each procedure's page; thresholds are the author's, in SKILL.md.
       </p>
       <div className="filters">
         <label>name{" "}
@@ -86,9 +88,19 @@ function QueryList({ query, name, window, limit }: { query: GovernanceQuery; nam
         </p>
       )}
       {answer.kind === "rows" && answer.rows.length === 0 && <p className="muted" data-testid="no-rows">Nothing to report.</p>}
-      {answer.kind === "rows" && answer.rows.length > 0 && <Rows rows={answer.rows} />}
+      {answer.kind === "rows" && answer.rows.length > 0 && <Rows rows={query.query === "manual-decisions" ? withResolvers(answer.rows) : answer.rows} />}
     </section>
   );
+}
+
+/** The resolver breakdown of a manual-decisions row: of the step's decisions, how many the client's decision
+ *  model answered and how many were answered by hand. */
+function withResolvers(rows: GovernanceRow[]): GovernanceRow[] {
+  return rows.map((row) => {
+    const decided = Number(row.decided), manual = Number(row.manual);
+    return Number.isFinite(decided) && Number.isFinite(manual)
+      ? { ...row, resolvers: { typesafe: decided - manual, manual } } : row;
+  });
 }
 
 /** Rows are flat; the columns are the keys in order of first appearance. */
@@ -100,7 +112,8 @@ function Rows({ rows }: { rows: GovernanceRow[] }) {
       <thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} data-testid="governance-row" data-name={cell(row.name)} data-step={cell(row.step)} data-question={cell(row.question)}>
+          <tr key={i} data-testid="governance-row" data-name={cell(row.name)} data-step={cell(row.step)} data-question={cell(row.question)}
+              data-resolver={cell(row.resolver)}>
             {columns.map((c) => <td key={c} className={typeof row[c] === "number" ? "num" : undefined}>{render(c, row[c], row)}</td>)}
           </tr>
         ))}
@@ -115,6 +128,22 @@ function cell(v: unknown): string | undefined {
 
 function render(column: string, value: unknown, row: GovernanceRow): React.ReactNode {
   if (value === null || value === undefined) return <span className="muted">—</span>;
+  if (column === "resolvers" && typeof value === "object") {
+    const { typesafe, manual } = value as { typesafe: number; manual: number };
+    const total = typesafe + manual || 1;
+    return (
+      <span data-testid="resolver-breakdown" data-typesafe={typesafe} data-manual={manual}>
+        <span className="resolver-bar" aria-hidden="true">
+          <span className="model" style={{ width: `${(100 * typesafe) / total}%` }} />
+          <span className="manual" style={{ width: `${(100 * manual) / total}%` }} />
+        </span>{" "}
+        model {typesafe} · by hand {manual}
+      </span>
+    );
+  }
+  if (column === "resolver" && typeof value === "string") return <span className="status-tag" data-testid="resolver">{value}</span>;
+  if (column === "stderr" && typeof value === "string") return value ? <pre className="stderr" data-testid="stderr">{value}</pre> : <span className="muted">empty</span>;
+  if (column === "exit_code" && typeof value === "number") return <code data-testid="exit-code">{value}</code>;
   if (column === "name" && typeof value === "string") {
     const ref = typeof row.revision === "string" ? `${value}@${row.revision}` : value;
     return <a href={href({ page: "procedure", ref })}><code>{value}</code></a>;

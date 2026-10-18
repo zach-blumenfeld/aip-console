@@ -32,6 +32,8 @@ export interface StepDetail {
   branch_on?: string;   // router
   script?: string;      // execution
   timeout?: number | null;
+  /** How the script is launched, from its folder; null is `python <script>`. */
+  command?: string[] | null;
   template?: string;    // client_task
   framing?: boolean;
 }
@@ -45,6 +47,16 @@ export interface StepInput {
   name: string;
   type: string;
   description: string | null;
+}
+
+/** A key an execution or client_task step adds to the state; same shape as an input. */
+export type StepOutput = StepInput;
+
+/** What the machine that runs the scripts must have (the procedure's `requires`). */
+export interface Requires {
+  interpreter: { name: string; version: string | null };
+  packages: string[];
+  tools: string[];
 }
 
 export interface Question {
@@ -87,6 +99,9 @@ export interface ProcedureInfo {
   edges: Edge[];
   branches: Branch[];
   inputs: StepInput[];
+  outputs: StepOutput[];
+  /** Null for a procedure with no execution steps. */
+  requires: Requires | null;
   questions: Question[];
   resources: Resource[];
   files: FileEntry[];
@@ -129,6 +144,8 @@ export interface HistoryEntry {
   attribution?: Attribution;
   /** Execution steps: wall time on the client that ran the script. */
   seconds?: number;
+  /** Execution steps: the client machine that ran the script (on an error entry, it is in `result`). */
+  host?: string;
   /** Errors: the kind of the step that failed. */
   step_kind?: StepKind;
 }

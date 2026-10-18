@@ -118,7 +118,7 @@ export function RunPage({ id }: { id: string }) {
         <div>
           {run.history.length === 0 && <p className="muted">This run has no history yet.</p>}
           {run.history.map((entry, i) => (
-            <RunStepCard key={i} entry={entry} info={info} index={i + 1} after={afterOf(run.history, i)} />
+            <RunStepCard key={i} entry={entry} info={info} index={i + 1} later={run.history.slice(i + 1)} />
           ))}
           {pause && (
             <section className="pause" data-testid="run-pause">
@@ -169,10 +169,4 @@ export function traceOf(history: HistoryEntry[]): { visited: Set<string>; taken:
     previous = h.step;
   }
   return { visited, taken };
-}
-
-/** The state after entry `i`: what the next entry received. Unknown for the last entry (the server keeps only inputs). */
-function afterOf(history: HistoryEntry[], i: number): Record<string, unknown> | undefined {
-  const next = history[i + 1];
-  return next && next.kind !== "error" ? next.input : undefined;
 }
