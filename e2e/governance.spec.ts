@@ -94,8 +94,9 @@ test("the governance page lists the overridden decision and marks the graph-only
   await page.goto("./#/governance");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Governance");
   const queries = page.getByTestId("governance-query");
-  await expect(queries).toHaveCount(5);
-  for (const q of ["overridden-decisions", "manual-decisions", "failing-scripts", "missing-fields", "untaken-branches"]) {
+  await expect(queries).toHaveCount(9);
+  for (const q of ["overridden-decisions", "manual-decisions", "failing-scripts", "missing-fields", "untaken-branches",
+                   "empty-results", "unused-data", "cycles", "repeated-cycles"]) {
     await expect(page.locator(`[data-testid="governance-query"][data-query="${q}"]`)).toHaveCount(1);
   }
 
@@ -113,6 +114,9 @@ test("the governance page lists the overridden decision and marks the graph-only
   const untaken = page.locator('[data-testid="governance-query"][data-query="untaken-branches"]');
   await expect(untaken).toHaveAttribute("data-state", "unsupported");
   await expect(untaken.getByTestId("needs-graph")).toContainText("needs the Neo4j backend");
+  for (const q of ["empty-results", "unused-data", "cycles", "repeated-cycles"]) {
+    await expect(page.locator(`[data-testid="governance-query"][data-query="${q}"]`)).toHaveAttribute("data-state", "unsupported");
+  }
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   // The name filter rides in the hash and narrows every list.
