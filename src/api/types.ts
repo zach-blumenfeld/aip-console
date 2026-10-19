@@ -196,7 +196,8 @@ export interface RunDetail {
 // ------------------------------------------------------------------- governance (§7, §10.5)
 
 /** One entry of `GET /governance`: a named corpus query and where to ask it. */
-export interface GovernanceQuery { query: string; description: string; path: string }
+/** One query of `GET /governance`: a built-in, or one stored on the server (`builtin: false`), which runs read-only. */
+export interface GovernanceQuery { query: string; description: string; path: string; builtin: boolean }
 
 /** A row of `GET /governance/{query}`: flat, with the columns the query defines. */
 export type GovernanceRow = Record<string, unknown>;

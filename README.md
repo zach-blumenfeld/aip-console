@@ -41,7 +41,9 @@ revisions (manifest by hash, line diff for changed text files, both computed cli
 `#/run[/<ref>]` the run console, `#/runs[/<id>]` history (each step's declared state in and out, the
 machine that ran it, and each decision's resolver and review status), `#/governance` the corpus queries of
 `GET /governance` as lists (with the model/by-hand split of `manual-decisions` and the stderr clients
-reported for `failing-scripts`), and `#/server` (the console's server, and a bearer token for this tab).
+reported for `failing-scripts`), plus a form to keep a query of your own on the server, which a Neo4j-backed
+server stores and runs read-only and lists beside the built-ins, and `#/server` (the console's server, and a
+bearer token for this tab).
 
 ## Developing
 

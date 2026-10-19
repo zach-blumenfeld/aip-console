@@ -97,4 +97,9 @@ export const api = {
     const qs = q.toString();
     return request<GovernanceRow[]>(`/governance/${encodeURIComponent(query)}${qs ? "?" + qs : ""}`);
   },
+  /** Keep a query of your own on the server (replacing one of that name); 501 on a backend with no query language. */
+  storeGovernanceQuery: (query: string, body: { description: string; cypher: string }) =>
+    request<GovernanceQuery>(`/governance/${encodeURIComponent(query)}`, { method: "PUT", body: JSON.stringify(body) }),
+  removeGovernanceQuery: (query: string) =>
+    request<{ query: string; removed: boolean }>(`/governance/${encodeURIComponent(query)}`, { method: "DELETE" }),
 };

@@ -117,6 +117,9 @@ test("the governance page lists the overridden decision and marks the graph-only
   for (const q of ["empty-results", "unused-data", "cycles", "repeated-cycles"]) {
     await expect(page.locator(`[data-testid="governance-query"][data-query="${q}"]`)).toHaveAttribute("data-state", "unsupported");
   }
+  // every listed query is a built-in here, so none offers removal
+  await expect(page.locator('[data-testid="governance-query"][data-builtin="false"]')).toHaveCount(0);
+  await expect(page.getByTestId("remove-query")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   // The name filter rides in the hash and narrows every list.
@@ -133,4 +136,17 @@ test("the governance page lists the overridden decision and marks the graph-only
   expect(await page.evaluate(() => [localStorage.getItem("aip.token"), sessionStorage.getItem("aip.token")])).toEqual([null, "secret-token"]);
   await page.getByRole("button", { name: "Clear" }).click();
   expect(await page.evaluate(() => sessionStorage.getItem("aip.token"))).toBeNull();
+});
+
+test("keeping a query of your own needs the graph backend", async ({ page }) => {
+  await page.goto("#/governance");
+  const form = page.getByTestId("add-query");
+  await expect(form).toBeVisible();
+  await expect(page.getByTestId("store-query")).toBeDisabled();
+  await page.getByTestId("query-name").fill("steps-by-kind");
+  await page.getByTestId("query-cypher").fill("MATCH (st:Step) RETURN st.kind AS kind, count(*) AS steps");
+  await expect(page.getByTestId("store-query")).toBeEnabled();
+  await page.getByTestId("store-query").click();
+  await expect(form).toHaveAttribute("data-state", "unsupported");
+  await expect(form.getByTestId("needs-graph")).toContainText("needs the Neo4j backend");
 });
