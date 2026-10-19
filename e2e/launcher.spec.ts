@@ -60,7 +60,8 @@ test("with no --server the console uses the server `aip config` names", async ()
       child.on("exit", (code) => reject(new Error(`the console exited with ${code}`)));
     });
     const res = await fetch(`${url}console/config`);
-    expect(await res.json()).toMatchObject({ mode: "server", server: SERVER, aip: { format: "0.6a0" }, minimum: "0.6a0" });
+    const format = /format (\S+)/.exec(spawnSync("aip", ["--version"], { env: { ...process.env, ...CLI_ENV }, encoding: "utf8" }).stdout)![1];
+    expect(await res.json()).toMatchObject({ mode: "server", server: SERVER, aip: { format }, minimum: "0.6a0" });
   } finally {
     child.kill();
   }
