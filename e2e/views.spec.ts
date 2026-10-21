@@ -158,7 +158,7 @@ test("a failed run shows the client's stderr on the run and in failing-scripts, 
   await page.goto("./#/governance");
   await expect(page.locator("main")).not.toContainText("threshold override");
   const manualQuery = page.locator('[data-testid="governance-query"][data-query="manual-decisions"]');
-  const breakdown = manualQuery.locator('[data-testid="governance-row"][data-step="triage"]').getByTestId("resolver-breakdown");
+  const breakdown = manualQuery.locator('[data-testid="governance-row"][data-name="billing-support"][data-step="triage"]').getByTestId("resolver-breakdown");
   await expect(breakdown).toBeVisible();
   expect(Number(await breakdown.getAttribute("data-typesafe"))).toBeGreaterThanOrEqual(2);
   expect(Number(await breakdown.getAttribute("data-manual"))).toBeGreaterThanOrEqual(1);

@@ -6,6 +6,7 @@ import { href, navigate } from "../router";
 import { Requires } from "./Requires";
 import { describe } from "./Source";
 import { StepGraph } from "./StepGraph";
+import { TrafficSummary, TrafficTable, useTraffic } from "./Traffic";
 import { DownloadZip, PublishedBanner } from "./Zip";
 
 export function Procedure({ reference }: { reference: string }) {
@@ -14,9 +15,10 @@ export function Procedure({ reference }: { reference: string }) {
   const [error, setError] = useState<string | null>(null);
   // Bumped after pin or retire: both fetches run again, the page stays up meanwhile.
   const [version, setVersion] = useState(0);
-  const [mode, setMode] = useState<"control" | "data">("control");
+  const [mode, setMode] = useState<"control" | "data" | "traffic">("control");
   const name = reference.split("@")[0];
   const flow = useMemo(() => (info ? dataFlow(info) : []), [info]);
+  const traffic = useTraffic(name, info?.revision ?? "", mode === "traffic" && info !== null);
 
   useEffect(() => {
     setError(null);
@@ -54,10 +56,14 @@ export function Procedure({ reference }: { reference: string }) {
           <div className="flow-toggle" role="radiogroup" aria-label="graph">
             <label><input type="radio" name="flow" checked={mode === "control"} onChange={() => setMode("control")} /> control flow</label>
             <label><input type="radio" name="flow" checked={mode === "data"} onChange={() => setMode("data")} /> data flow</label>
+            <label><input type="radio" name="flow" checked={mode === "traffic"} onChange={() => setMode("traffic")} /> run traffic</label>
           </div>
+          {traffic && <TrafficSummary state={traffic} />}
           <StepGraph steps={info.step_details} edges={info.edges} branches={info.branches}
-                     start={info.start.step} end={info.end.step} flow={mode === "data" ? groupFlow(flow) : undefined} />
+                     start={info.start.step} end={info.end.step} flow={mode === "data" ? groupFlow(flow) : undefined}
+                     traffic={traffic?.state === "ready" ? traffic.traffic : undefined} />
           {mode === "data" && <DataFlowTable info={info} flow={flow} />}
+          {traffic?.state === "ready" && traffic.traffic.runs > 0 && <TrafficTable traffic={traffic.traffic} steps={info.step_details.map((s) => s.name)} />}
         </section>
 
         <section>

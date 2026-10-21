@@ -66,6 +66,20 @@ ul.criteria { margin: 0.25rem 0 0; padding-left: 1.2rem; }
 .step-graph .data-label { font-size: 11px; fill: var(--data); paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
 .step-graph .input-node rect { fill: var(--fill); stroke: var(--data); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .flow-toggle { display: inline-flex; gap: 0.75rem; font-size: 0.9rem; }
+
+/* Run traffic: edges in the accent, thick with use; an edge no run took stays a hairline. */
+.step-graph.traffic-mode .edge { color: color-mix(in srgb, currentColor 28%, transparent); }
+.step-graph.traffic-mode .edge.busy { color: var(--decision); }
+.step-graph.traffic-mode .edge.idle path { stroke-dasharray: 3 4; }
+.step-graph .busy-arrow { fill: var(--decision); }
+.step-graph .run-count { font-size: 11px; font-weight: 600; fill: var(--decision); paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
+.step-graph.traffic-mode .branch-label { fill: currentColor; }
+.step-graph .badge rect { fill: var(--decision); stroke: Canvas; stroke-width: 1.5; }
+.step-graph .badge text { font-size: 11px; font-weight: 600; fill: white; }
+.step-graph .badge.failed rect { fill: #b00020; }
+.step-graph .badge.none rect { fill: color-mix(in srgb, currentColor 30%, Canvas); }
+.share-bar { display: inline-block; width: 6rem; height: 0.55rem; border-radius: 3px; background: var(--fill); vertical-align: middle; overflow: hidden; }
+.share-bar span { display: block; height: 100%; background: var(--decision); }
 .machine { font-size: 0.85rem; }
 .state-io h4 { margin: 0.25rem 0; font-size: 0.85rem; }
 .requires-list { margin: 0.25rem 0; padding-left: 1.25rem; }

@@ -3,7 +3,7 @@ import { strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { SECOND_REVISION_DIR, SERVER } from "./aip";
+import { aipJson, SECOND_REVISION_DIR, SERVER } from "./aip";
 
 // Skill zips: a revision downloads as `<name>@<rev>.zip` holding `<name>/<path>` for every file of its
 // manifest, and a zip of a skill folder publishes through the catalog page, where the server names the skill
@@ -121,6 +121,38 @@ test("a zip that is not a skill is refused with the reason", async ({ page }) =>
   await expect(error).toContainText("invalid_skill");
   await expect(error.getByTestId("issues").getByRole("listitem").first()).toContainText("source");
   await expect(page.getByRole("table", { name: "catalog" }).getByRole("row").filter({ hasText: "zip-broken" })).toHaveCount(0);
+});
+
+test("run traffic weights the graph's edges by the runs that took them", async ({ page }) => {
+  // The uploaded skill has no runs yet, so its traffic is exactly what this test drives: two runs, one through
+  // escalate to the end, one paused at reply (an answer is never given), both answered by hand at triage.
+  for (const tone of ["angry", "calm"] as const) {
+    const paused = aipJson(["run", NAME], { message: tone === "angry" ? "Charged twice, furious." : "Could I get a receipt?" });
+    expect(paused.paused).toBe("decision");
+    aipJson(["resume", paused.run_id as string], { billing: true, tone });
+  }
+  await page.goto(`./#/p/${NAME}`);
+  await page.getByLabel("run traffic").check();
+  const summary = page.getByTestId("traffic-summary");
+  await expect(summary).toHaveAttribute("data-runs", "2");
+  await expect(summary).toContainText("1 done, 1 paused");
+
+  const graph = page.getByRole("img", { name: "step graph" });
+  const edge = (from: string, to: string) => graph.locator(`[data-testid="step-edge"][data-from="${from}"][data-to="${to}"]`);
+  await expect(edge("triage", "by-tone")).toHaveAttribute("data-runs", "2");
+  await expect(edge("by-tone", "escalate")).toHaveAttribute("data-runs", "1");
+  await expect(edge("escalate", "end")).toHaveAttribute("data-runs", "1");
+  await expect(edge("by-tone", "reply")).toHaveAttribute("data-runs", "1");
+  await expect(edge("reply", "end")).toHaveAttribute("data-runs", "0");
+  const badge = (step: string) => graph.locator(`[data-testid="step-node"][data-step="${step}"] [data-testid="step-runs"]`);
+  await expect(badge("triage")).toHaveAttribute("data-runs", "2");
+  await expect(badge("reply")).toHaveAttribute("data-runs", "1");
+  await expect(badge("end")).toHaveAttribute("data-runs", "1");
+  await expect(page.locator('[data-testid="traffic-row"][data-step="end"]')).toHaveAttribute("data-runs", "1");
+
+  // The other two modes are untouched by it.
+  await page.getByLabel("control flow").check();
+  await expect(graph.locator('[data-testid="edge-runs"]')).toHaveCount(0);
 });
 
 test("a name whose every revision is retired is hidden from the catalog unless asked for, and cannot be run", async ({ page, request }) => {

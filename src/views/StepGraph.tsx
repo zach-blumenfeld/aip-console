@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { START_INPUT } from "../graph/dataflow";
 import { layout } from "../graph/layout";
 import type { Branch, Edge, StepDetail } from "../api/types";
+import type { Traffic } from "./Traffic";
 
 const W = 150, H = 48, PAD = 24;
 // Data-flow arrows run down the right of the nodes, one lane per arrow that skips a layer.
@@ -20,9 +21,11 @@ interface Props {
   /** Draw the data flow instead: one arrow per (producer, consumer) labelled with the keys it carries
    *  (graph/dataflow.ts), with the start input as a node of its own. Control edges stay, faint. */
   flow?: { from: string; to: string; keys: string[] }[];
+  /** Weight the control edges by the runs that took them and badge each step with the runs that reached it. */
+  traffic?: Traffic;
 }
 
-export function StepGraph({ steps, edges, branches, start, end, visited, taken: takenEdges, flow }: Props) {
+export function StepGraph({ steps, edges, branches, start, end, visited, taken: takenEdges, flow, traffic }: Props) {
   const g = useMemo(() => {
     const all = [
       ...edges.map((e) => ({ from: e.from, to: e.to })),
@@ -37,10 +40,11 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
   const data = useMemo(() => (flow ? route(flow, g.nodes) : []), [flow, g]);
   const right = data.length ? Math.max(0, ...data.map((d) => d.reach - g.width)) + 8 : 0;
   const controlEdges = g.edges.filter((e) => e.from !== START_INPUT);
+  const busiest = traffic ? Math.max(1, ...traffic.edges.values()) : 1;
 
   return (
     <svg
-      className={`step-graph${flow ? " data-mode" : ""}`}
+      className={`step-graph${flow ? " data-mode" : ""}${traffic ? " traffic-mode" : ""}`}
       role="img"
       aria-label="step graph"
       viewBox={`${-PAD} ${-PAD} ${g.width + 2 * PAD + right} ${g.height + 2 * PAD}`}
@@ -48,8 +52,12 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
       height={g.height + 2 * PAD}
     >
       <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        {/* userSpaceOnUse: the head stays this size however thick the traffic mode draws the line. */}
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+        </marker>
+        <marker id="arrow-busy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" className="busy-arrow" />
         </marker>
         <marker id="data-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" className="data-arrow" />
@@ -59,15 +67,20 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
         const d = e.points.map(([x, y], i) => `${i ? "L" : "M"} ${x} ${y}`).join(" ");
         const [mx, my] = midpoint(e.points);
         const taken = takenEdges ? takenEdges.has(`${e.from}->${e.to}`) : (visited?.has(e.from) && visited?.has(e.to));
+        const runs = traffic ? (traffic.edges.get(`${e.from}->${e.to}`) ?? 0) : null;
+        // Traffic: width grows with the square root of the share, so a rare branch still reads as a line.
+        const width = runs !== null ? (runs ? 1.5 + 6 * Math.sqrt(runs / busiest) : 1) : taken ? 2.5 : 1.25;
         return (
-          <g key={`${e.from}->${e.to}:${e.label ?? ""}`} className={`edge${taken ? " taken" : ""}`}
-             data-testid="step-edge" data-from={e.from} data-to={e.to} data-taken={taken ? "true" : "false"}>
-            <path d={d} fill="none" stroke="currentColor" strokeWidth={taken ? 2.5 : 1.25} markerEnd="url(#arrow)" />
+          <g key={`${e.from}->${e.to}:${e.label ?? ""}`} className={`edge${taken ? " taken" : ""}${runs ? " busy" : runs === 0 ? " idle" : ""}`}
+             data-testid="step-edge" data-from={e.from} data-to={e.to} data-taken={taken ? "true" : "false"}
+             data-runs={runs ?? undefined}>
+            <path d={d} fill="none" stroke="currentColor" strokeWidth={width} strokeLinejoin="round" markerEnd={runs ? "url(#arrow-busy)" : "url(#arrow)"} />
             {e.label && (
-              <text x={mx} y={my - 4} textAnchor="middle" className="branch-label" data-testid="branch-label">
+              <text x={mx} y={my - 4 - width / 2} textAnchor="middle" className="branch-label" data-testid="branch-label">
                 {e.label}
               </text>
             )}
+            {runs ? <text x={mx + 9 + width / 2} y={my + 4} textAnchor="start" className="run-count" data-testid="edge-runs">{runs}</text> : null}
           </g>
         );
       })}
@@ -103,11 +116,26 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
               {isStart && <circle cx={0} cy={H / 2} r={5} className="start-dot" />}
               <text x={W / 2} y={H / 2 - 4} textAnchor="middle" className="node-name">{n.id}</text>
               <text x={W / 2} y={H / 2 + 13} textAnchor="middle" className="node-kind">{step.kind}</text>
+              {traffic && <Badge runs={traffic.steps.get(n.id) ?? 0} failed={traffic.failed.get(n.id) ?? 0} total={traffic.runs} />}
             </g>
           </a>
         );
       })}
     </svg>
+  );
+}
+
+/** The runs that reached a step, pinned to its top-right corner; red when some failed there. */
+function Badge({ runs, failed, total }: { runs: number; failed: number; total: number }) {
+  const text = failed ? `${runs} · ${failed} failed` : String(runs);
+  const w = 8 + 6.5 * text.length;
+  return (
+    <g className={`badge${failed ? " failed" : runs ? "" : " none"}`} transform={`translate(${W - w + 8}, -9)`} data-testid="step-runs"
+       data-runs={runs} data-failed={failed}>
+      <title>{runs} of {total} runs reached this step{failed ? `, ${failed} failed here` : ""}</title>
+      <rect width={w} height={18} rx={9} />
+      <text x={w / 2} y={13} textAnchor="middle">{text}</text>
+    </g>
   );
 }
 
