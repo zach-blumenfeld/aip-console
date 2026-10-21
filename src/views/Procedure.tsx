@@ -6,6 +6,7 @@ import { href, navigate } from "../router";
 import { Requires } from "./Requires";
 import { describe } from "./Source";
 import { StepGraph } from "./StepGraph";
+import { DownloadZip, PublishedBanner } from "./Zip";
 
 export function Procedure({ reference }: { reference: string }) {
   const [info, setInfo] = useState<ProcedureInfo | null>(null);
@@ -45,6 +46,7 @@ export function Procedure({ reference }: { reference: string }) {
         <span className="muted rev"> @{info.revision}{info.retired ? " (retired)" : ""}</span>
       </h1>
       <p>{info.description}</p>
+      <PublishedBanner key={info.id} reference={info.id} />
 
       <div className="procedure-grid">
         <section>
@@ -67,6 +69,7 @@ export function Procedure({ reference }: { reference: string }) {
             {previous && <> · <a href={href({ page: "diff", name: info.name, a: previous, b: info.revision })}>diff with previous</a></>}
             {" · "}<a href={href({ page: "run", ref: `${info.name}@${info.revision}` })}>run</a>
             {" · "}<a href={href({ page: "runs", name: info.name })}>history</a>
+            {" · "}<DownloadZip name={info.name} revision={info.revision} />
           </p>
 
           <h2>Purpose</h2>

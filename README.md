@@ -33,10 +33,14 @@ At startup the console runs `aip --version` and refuses to start if `aip` is mis
 The console's process answers only pages on this machine: it listens on 127.0.0.1, refuses a foreign
 `Host` (DNS rebinding) and any post that is not same-origin JSON, since a post starts a run.
 
-Routes are hash-based: `#/` catalog (with what each name's scripts require), `#/p/<name>[@rev]` procedure
+Routes are hash-based: `#/` catalog (with what each name's scripts require, and a place to publish a skill zip:
+a folder with `SKILL.md`, zipped, is unpacked in the page and posted to the server, which validates it and names
+the skill from the frontmatter, so an existing name gets a new revision and the same bytes land on the revision
+already there; the validator's issues are listed when it is refused), `#/p/<name>[@rev]` procedure
 (its `requires`, each step's inputs and outputs, the graph as control flow or as key-level data flow, pin and
-retire),
-`#/p/<ref>/files[/<path>]` source manifest and viewer, `#/p/<name>/diff[/<a>..<b>]` the diff between two
+retire, and `download zip`: the revision as `<name>@<rev>.zip` with one `<name>/` folder inside, the Agent Skills
+layout, packed in the page from the manifest and the files),
+`#/p/<ref>/files[/<path>]` source manifest and viewer (with the same download), `#/p/<name>/diff[/<a>..<b>]` the diff between two
 revisions (manifest by hash, line diff for changed text files, both computed client-side),
 `#/run[/<ref>]` the run console, `#/runs[/<id>]` history (each step's declared state in and out, the
 machine that ran it, and each decision's resolver and review status), `#/governance` the corpus queries of
@@ -76,7 +80,9 @@ revision's folder. Global setup publishes both revisions. The CLI runs with its 
 decision pauses for the page to answer.
 
 The `console` project drives both branches from the run page (the escalate script's ticket must land in the
-console's working directory), a failing script and its retry, cancel, history with attribution, governance,
+console's working directory), a failing script and its retry, cancel, history with attribution, governance, skill
+zips (a download matches the manifest byte for byte, an upload under its own name makes a revision, the same zip
+lands on it again, a downloaded zip uploads back onto its revision, and a broken one lists the validator's issues),
 the 0.6a0 views over fixture runs posted to the run API (a model-answered decision, a script reported from
 another machine, a failed script), and the launcher itself (an old `aip` on the PATH, `aip config`, the loopback guards). The `folder` project
 runs the same skill from the folder console with no server.

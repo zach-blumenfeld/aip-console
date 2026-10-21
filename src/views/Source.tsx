@@ -3,17 +3,22 @@ import { api, ApiError, type FileBytes } from "../api/client";
 import type { FileEntry } from "../api/types";
 import { asText, splitLines } from "../diff/lines";
 import { href } from "../router";
+import { DownloadZip } from "./Zip";
 
 /** View 2a: the file manifest of a revision and a viewer for one file. */
 export function Source({ reference, path }: { reference: string; path?: string }) {
   const [files, setFiles] = useState<FileEntry[] | null>(null);
+  const [revision, setRevision] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const name = reference.split("@")[0];
 
   useEffect(() => {
     setFiles(null);
+    setRevision(null);
     setError(null);
     api.files(reference).then(setFiles).catch((e: unknown) => setError(describe(e)));
+    // The zip is named after the exact revision, which a bare name or `@latest` leaves to the catalog to say.
+    api.info(reference).then((info) => setRevision(info.revision)).catch(() => undefined);
   }, [reference]);
 
   if (error) return <p className="error" role="alert">{error}</p>;
@@ -27,7 +32,10 @@ export function Source({ reference, path }: { reference: string; path?: string }
         {path && <> / <code>{path}</code></>}
       </nav>
       <h1>{name} <span className="muted rev">source{reference.includes("@") ? ` @${reference.split("@")[1]}` : ""}</span></h1>
-      <p className="muted">{files.length} files, {formatSize(total)} · <a href={href({ page: "diff", name })}>compare revisions</a></p>
+      <p className="muted">
+        {files.length} files, {formatSize(total)} · <a href={href({ page: "diff", name })}>compare revisions</a>
+        {revision && <> · <DownloadZip name={name} revision={revision} /></>}
+      </p>
 
       <div className="source-grid">
         <table aria-label="file manifest" className="compact manifest">

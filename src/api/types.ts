@@ -11,7 +11,8 @@ export interface CatalogEntry {
   name: string;
   description: string;
   pinned: string | null;
-  latest: string;
+  /** The newest live revision; null once every revision is retired, when the name no longer resolves. */
+  latest: string | null;
   revisions: Revision[];
 }
 
@@ -108,7 +109,7 @@ export interface ProcedureInfo {
 }
 
 export interface ApiErrorBody {
-  error: { kind: string; message: string; location?: string };
+  error: { kind: string; message: string; location?: string; issues?: ValidationIssue[] };
 }
 
 // ---------------------------------------------------------------- run history (GET /runs/{id})
@@ -201,3 +202,19 @@ export interface GovernanceQuery { query: string; description: string; path: str
 
 /** A row of `GET /governance/{query}`: flat, with the columns the query defines. */
 export type GovernanceRow = Record<string, unknown>;
+
+// ------------------------------------------------------------------- publish (POST /catalog)
+
+/** One issue of the server's validation, in a 422 `invalid_skill` envelope (`issues`), or a warning of a
+ *  publish that went through. Paths are relative to the upload. */
+export interface ValidationIssue {
+  path: string;
+  kind: string;
+  message: string;
+  location?: string;
+  /** Absent on an error. */
+  severity?: "warning";
+}
+
+/** `POST /catalog`: the revision the files became (the existing one when nothing changed). */
+export interface PublishResult { name: string; revision: string; id: string; warnings: ValidationIssue[] }

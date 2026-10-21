@@ -30,8 +30,12 @@ function Picker() {
       <ul className="picker">
         {entries.map((c) => (
           <li key={c.name}>
-            <a href={href({ page: "run", ref: c.name })}><code>{c.name}</code></a>
-            <span className="muted"> @{c.pinned ?? c.latest}{c.pinned ? " (pinned)" : ""} — {c.description}</span>
+            {c.latest === null
+              ? <><code className="muted">{c.name}</code><span className="muted"> — every revision is retired; nothing to run</span></>
+              : <>
+                  <a href={href({ page: "run", ref: c.name })}><code>{c.name}</code></a>
+                  <span className="muted"> @{c.pinned ?? c.latest}{c.pinned ? " (pinned)" : ""} — {c.description}</span>
+                </>}
           </li>
         ))}
       </ul>
