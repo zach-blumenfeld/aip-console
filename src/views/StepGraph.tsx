@@ -147,6 +147,8 @@ function midpoint(points: [number, number][]): [number, number] {
     const [[x1, y1], [x2, y2]] = points;
     return [(x1 + x2) / 2, (y1 + y2) / 2];
   }
-  const [x, y] = points[Math.floor(points.length / 2)];
-  return [x, y];
+  // A bent edge: the middle of its middle segment, which runs through a slot no node occupies.
+  const i = Math.floor(points.length / 2);
+  const [[x1, y1], [x2, y2]] = [points[i - 1], points[i]];
+  return [(x1 + x2) / 2, (y1 + y2) / 2];
 }

@@ -33,7 +33,7 @@ th { font-weight: 600; }
 table.compact { margin: 0.5rem 0; font-size: 0.92rem; }
 table.compact th, table.compact td { padding: 0.25rem 0.5rem; }
 code { font-size: 0.9em; }
-pre { background: var(--fill); padding: 0.5rem 0.75rem; border-radius: 6px; overflow: auto; }
+pre { background: var(--fill); padding: 0.5rem 0.75rem; border-radius: 6px; overflow: auto; max-width: 100%; box-sizing: border-box; }
 input[type="search"] { width: 100%; max-width: 32rem; padding: 0.5rem 0.75rem; font: inherit; margin-bottom: 0.75rem; }
 select { font: inherit; max-width: 100%; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.75rem; margin: 0.25rem 0; }
@@ -127,6 +127,8 @@ table.line-diff tr.fold td { opacity: 0.55; font-style: italic; text-align: cent
 .top-nav a { color: inherit; opacity: 0.75; }
 .run-meta button { font: inherit; font-size: 0.85rem; }
 .run-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1.3fr); gap: 1.5rem; align-items: start; }
+.run-grid > * { min-width: 0; }
+.run-card { min-width: 0; }
 @media (max-width: 56rem) { .run-grid { grid-template-columns: 1fr; } }
 .small { font-size: 0.85rem; }
 .picker { padding-left: 1.2rem; }
@@ -143,7 +145,8 @@ fieldset.question { border: 1px solid var(--line); border-radius: 6px; margin: 0
 fieldset.question p { margin: 0.25rem 0 0.5rem; }
 label.option { display: block; margin: 0.2rem 0; }
 .run-card h4 { margin: 0.6rem 0 0.2rem; font-size: 0.9rem; }
-.state-pair, .io-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+/* minmax(0, …): a wide JSON block scrolls inside its column instead of widening it past the card. */
+.state-pair, .io-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
 @media (max-width: 56rem) { .state-pair, .io-pair { grid-template-columns: 1fr; } }
 .state-pair pre, .io-pair pre { margin: 0.25rem 0; max-height: 20rem; }
 details.states summary { cursor: pointer; opacity: 0.7; font-size: 0.9rem; margin-top: 0.5rem; }
