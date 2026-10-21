@@ -1,6 +1,7 @@
 import { consoleConfig } from "./console";
 import type {
-  ApiErrorBody, CatalogEntry, FileEntry, GovernanceQuery, GovernanceRow, ProcedureInfo, RunDetail, RunSummary, SearchHit,
+  ApiErrorBody, CatalogEntry, FileEntry, GovernanceQuery, GovernanceRow, ProcedureInfo, PublishResult, RunDetail, RunSummary,
+  SearchHit, ValidationIssue,
 } from "./types";
 
 const TOKEN_KEY = "aip.token";
@@ -22,7 +23,9 @@ export function setToken(token: string | null): void {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, public kind: string, message: string, public location?: string) {
+  constructor(public status: number, public kind: string, message: string, public location?: string,
+              /** A 422 `invalid_skill` from publish: the validator's issues. */
+              public issues: ValidationIssue[] = []) {
     super(message);
   }
 }
@@ -39,7 +42,7 @@ async function send(path: string, init: RequestInit = {}, accept = "application/
     let body: ApiErrorBody | null = null;
     try { body = (await res.json()) as ApiErrorBody; } catch { /* not an envelope */ }
     const e = body?.error;
-    throw new ApiError(res.status, e?.kind ?? "http_error", e?.message ?? res.statusText, e?.location);
+    throw new ApiError(res.status, e?.kind ?? "http_error", e?.message ?? res.statusText, e?.location, e?.issues ?? []);
   }
   return res;
 }
@@ -69,6 +72,15 @@ export const api = {
     const res = await send(`/catalog/${encodeURIComponent(ref)}/files/${encodePath(path)}`, {}, "*/*");
     return { bytes: new Uint8Array(await res.arrayBuffer()), mediaType: res.headers.get("Content-Type") ?? "application/octet-stream" };
   },
+
+  /** Publish a skill's files (publish scope): the server validates them and names the skill from SKILL.md, so an
+   *  existing name gets a new revision, and the same bytes the revision already there. 422 `invalid_skill` carries
+   *  the validator's issues (ApiError.issues). */
+  publish: (files: { path: string; bytes: Uint8Array; mode: number }[]) =>
+    request<PublishResult>("/catalog", {
+      method: "POST",
+      body: JSON.stringify({ files: files.map((f) => ({ path: f.path, bytes_b64: base64(f.bytes), mode: f.mode })) }),
+    }),
 
   // Runs are driven by the `aip` CLI the console spawns (api/console.ts); the page only reads them.
 
@@ -103,3 +115,9 @@ export const api = {
   removeGovernanceQuery: (query: string) =>
     request<{ query: string; removed: boolean }>(`/governance/${encodeURIComponent(query)}`, { method: "DELETE" }),
 };
+
+function base64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}

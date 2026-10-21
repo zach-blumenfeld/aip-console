@@ -33,7 +33,7 @@ th { font-weight: 600; }
 table.compact { margin: 0.5rem 0; font-size: 0.92rem; }
 table.compact th, table.compact td { padding: 0.25rem 0.5rem; }
 code { font-size: 0.9em; }
-pre { background: var(--fill); padding: 0.5rem 0.75rem; border-radius: 6px; overflow: auto; }
+pre { background: var(--fill); padding: 0.5rem 0.75rem; border-radius: 6px; overflow: auto; max-width: 100%; box-sizing: border-box; }
 input[type="search"] { width: 100%; max-width: 32rem; padding: 0.5rem 0.75rem; font: inherit; margin-bottom: 0.75rem; }
 select { font: inherit; max-width: 100%; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.75rem; margin: 0.25rem 0; }
@@ -66,6 +66,20 @@ ul.criteria { margin: 0.25rem 0 0; padding-left: 1.2rem; }
 .step-graph .data-label { font-size: 11px; fill: var(--data); paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
 .step-graph .input-node rect { fill: var(--fill); stroke: var(--data); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .flow-toggle { display: inline-flex; gap: 0.75rem; font-size: 0.9rem; }
+
+/* Run traffic: edges in the accent, thick with use; an edge no run took stays a hairline. */
+.step-graph.traffic-mode .edge { color: color-mix(in srgb, currentColor 28%, transparent); }
+.step-graph.traffic-mode .edge.busy { color: var(--decision); }
+.step-graph.traffic-mode .edge.idle path { stroke-dasharray: 3 4; }
+.step-graph .busy-arrow { fill: var(--decision); }
+.step-graph .run-count { font-size: 11px; font-weight: 600; fill: var(--decision); paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
+.step-graph.traffic-mode .branch-label { fill: currentColor; }
+.step-graph .badge rect { fill: var(--decision); stroke: Canvas; stroke-width: 1.5; }
+.step-graph .badge text { font-size: 11px; font-weight: 600; fill: white; }
+.step-graph .badge.failed rect { fill: #b00020; }
+.step-graph .badge.none rect { fill: color-mix(in srgb, currentColor 30%, Canvas); }
+.share-bar { display: inline-block; width: 6rem; height: 0.55rem; border-radius: 3px; background: var(--fill); vertical-align: middle; overflow: hidden; }
+.share-bar span { display: block; height: 100%; background: var(--decision); }
 .machine { font-size: 0.85rem; }
 .state-io h4 { margin: 0.25rem 0; font-size: 0.85rem; }
 .requires-list { margin: 0.25rem 0; padding-left: 1.25rem; }
@@ -127,6 +141,8 @@ table.line-diff tr.fold td { opacity: 0.55; font-style: italic; text-align: cent
 .top-nav a { color: inherit; opacity: 0.75; }
 .run-meta button { font: inherit; font-size: 0.85rem; }
 .run-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1.3fr); gap: 1.5rem; align-items: start; }
+.run-grid > * { min-width: 0; }
+.run-card { min-width: 0; }
 @media (max-width: 56rem) { .run-grid { grid-template-columns: 1fr; } }
 .small { font-size: 0.85rem; }
 .picker { padding-left: 1.2rem; }
@@ -143,7 +159,8 @@ fieldset.question { border: 1px solid var(--line); border-radius: 6px; margin: 0
 fieldset.question p { margin: 0.25rem 0 0.5rem; }
 label.option { display: block; margin: 0.2rem 0; }
 .run-card h4 { margin: 0.6rem 0 0.2rem; font-size: 0.9rem; }
-.state-pair, .io-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+/* minmax(0, …): a wide JSON block scrolls inside its column instead of widening it past the card. */
+.state-pair, .io-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
 @media (max-width: 56rem) { .state-pair, .io-pair { grid-template-columns: 1fr; } }
 .state-pair pre, .io-pair pre { margin: 0.25rem 0; max-height: 20rem; }
 details.states summary { cursor: pointer; opacity: 0.7; font-size: 0.9rem; margin-top: 0.5rem; }
@@ -177,3 +194,17 @@ strong.run-error { color: #b00020; }
 .governance .query h2 { margin-bottom: 0.1rem; }
 input.num-field { width: 6rem; font: inherit; }
 .server .fields { max-width: 40rem; }
+
+/* Skill zips */
+button.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--decision); text-decoration: underline; cursor: pointer; }
+button.linkish:disabled { cursor: default; opacity: 0.6; text-decoration: none; }
+.upload-zip { border: 1px dashed var(--line); border-radius: 6px; padding: 0.25rem 0.9rem 0.6rem; margin: 0 0 1rem; }
+.upload-zip.over { background: var(--fill); border-color: var(--decision); }
+.upload-zip .actions { margin-top: 0.35rem; flex-wrap: wrap; }
+.upload-zip .error p { margin: 0.5rem 0 0.25rem; }
+ul.issues { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; font-size: 0.9rem; }
+ul.issues li[data-severity="warning"] { color: var(--router); }
+.published-note { border: 1px solid var(--execution); border-radius: 6px; padding: 0.25rem 0.9rem; margin: 0.5rem 0; }
+.published-note p { margin: 0.4rem 0; }
+.catalog-retired { margin: 0 0 0.5rem; }
+tr[data-retired] td { opacity: 0.6; }
