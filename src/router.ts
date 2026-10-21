@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 
-// Hash routes, so the bundle serves from one path under `aip server --inspector`
-// with no fallback rule:  #/                          catalog
+// Hash routes, so the console's process serves one page with no fallback rule. In folder mode only
+// #/run (and #/, which shows it) apply; the others need a server.
+//                         #/                          catalog
 //                         #/p/<ref>                   procedure page, ref = name or name@rev
 //                         #/p/<ref>/files[/<path>]    source: the manifest, and one file open
 //                         #/p/<name>/diff[/<a>..<b>]  diff between two revisions of name
-//                         #/run[/<ref>]               run console: pick a procedure, then drive it
+//                         #/run[/<ref>]               run console: pick a procedure, then drive it through the CLI
 //                         #/runs[?name=&status=]      history: the runs the server persisted
 //                         #/runs/<id>                 one run replayed as a trace over the step graph
 //                         #/governance[?name=]        the corpus queries of GET /governance as lists
-//                         #/server                    server URL and bearer token for this browser
+//                         #/server                    the console's server, and the bearer token for this browser
 export type Route =
   | { page: "catalog" }
   | { page: "procedure"; ref: string }

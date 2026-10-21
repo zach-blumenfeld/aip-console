@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api/client";
-import type { CatalogEntry, ProcedureInfo, Question, Resource, StepDetail, StepInput } from "../api/types";
+import type { CatalogEntry, ProcedureInfo, Question, Resource, StepDetail, StepInput, StepOutput } from "../api/types";
+import { dataFlow, groupFlow, START_INPUT } from "../graph/dataflow";
 import { href, navigate } from "../router";
+import { Requires } from "./Requires";
 import { describe } from "./Source";
 import { StepGraph } from "./StepGraph";
 
@@ -9,9 +11,11 @@ export function Procedure({ reference }: { reference: string }) {
   const [info, setInfo] = useState<ProcedureInfo | null>(null);
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Bumped after pin, retire or a threshold save: both fetches run again, the page stays up meanwhile.
+  // Bumped after pin or retire: both fetches run again, the page stays up meanwhile.
   const [version, setVersion] = useState(0);
+  const [mode, setMode] = useState<"control" | "data">("control");
   const name = reference.split("@")[0];
+  const flow = useMemo(() => (info ? dataFlow(info) : []), [info]);
 
   useEffect(() => {
     setError(null);
@@ -45,8 +49,13 @@ export function Procedure({ reference }: { reference: string }) {
       <div className="procedure-grid">
         <section>
           <h2>Steps</h2>
+          <div className="flow-toggle" role="radiogroup" aria-label="graph">
+            <label><input type="radio" name="flow" checked={mode === "control"} onChange={() => setMode("control")} /> control flow</label>
+            <label><input type="radio" name="flow" checked={mode === "data"} onChange={() => setMode("data")} /> data flow</label>
+          </div>
           <StepGraph steps={info.step_details} edges={info.edges} branches={info.branches}
-                     start={info.start.step} end={info.end.step} />
+                     start={info.start.step} end={info.end.step} flow={mode === "data" ? groupFlow(flow) : undefined} />
+          {mode === "data" && <DataFlowTable info={info} flow={flow} />}
         </section>
 
         <section>
@@ -69,6 +78,10 @@ export function Procedure({ reference }: { reference: string }) {
           <h2>Start input</h2>
           <p className="muted">Step <code>{info.start.step}</code> ({info.start.kind})</p>
           <pre data-testid="example-input">{JSON.stringify(info.example_input, null, 2)}</pre>
+
+          <h2>Requires</h2>
+          <p className="muted small">What the machine that runs the scripts must have: the client checks it before the first execution step.</p>
+          <Requires requires={info.requires} />
         </section>
       </div>
 
@@ -77,9 +90,9 @@ export function Procedure({ reference }: { reference: string }) {
       <h2>Step details</h2>
       {info.step_details.map((s) => (
         <StepCard key={s.name} step={s} isStart={s.name === info.start.step} isEnd={s.name === info.end.step}
-                  inputs={byStep(info.inputs, s.name)} questions={byStep(info.questions, s.name)}
+                  inputs={byStep(info.inputs, s.name)} outputs={byStep(info.outputs ?? [], s.name)} questions={byStep(info.questions, s.name)}
                   resources={byStep(info.resources, s.name)} branches={info.branches.filter((b) => b.router === s.name)}
-                  next={info.edges.find((e) => e.from === s.name)?.to} thresholds={info.thresholds} />
+                  next={info.edges.find((e) => e.from === s.name)?.to} />
       ))}
     </article>
   );
@@ -112,12 +125,11 @@ function List({ title, items }: { title: string; items: string[] }) {
 
 interface CardProps {
   step: StepDetail; isStart: boolean; isEnd: boolean;
-  inputs: StepInput[]; questions: Question[]; resources: Resource[];
+  inputs: StepInput[]; outputs: StepOutput[]; questions: Question[]; resources: Resource[];
   branches: { value: string; to: string }[]; next?: string;
-  thresholds: Record<string, number>;
 }
 
-function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches, next, thresholds }: CardProps) {
+function StepCard({ step, isStart, isEnd, inputs, outputs, questions, resources, branches, next }: CardProps) {
   return (
     <section className={`step-card kind-${step.kind}`} id={`step-${step.name}`}>
       <h3>
@@ -128,6 +140,7 @@ function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches
       <dl>
         {step.kind === "router" && <><dt>branch on</dt><dd><code>{step.branch_on}</code></dd></>}
         {step.kind === "execution" && <><dt>script</dt><dd><code>{step.script}</code>{step.timeout ? ` (timeout ${step.timeout}s)` : ""}</dd></>}
+        {step.kind === "execution" && <><dt>command</dt><dd data-testid="command"><code>{step.command ? step.command.join(" ") : `python ${step.script?.replace(/^.*\//, "")}`}</code>{!step.command && <span className="muted"> (default)</span>}</dd></>}
         {step.kind === "client_task" && <><dt>template</dt><dd><code>{step.template}</code>{step.framing ? " · framed" : ""}</dd></>}
         {next && <><dt>inputs to</dt><dd><a href={`#step-${next}`}><code>{next}</code></a></dd></>}
       </dl>
@@ -141,12 +154,17 @@ function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches
           <tbody>{inputs.map((i) => <tr key={i.name}><td><code>{i.name}</code></td><td>{i.type}</td><td>{i.description ?? ""}</td></tr>)}</tbody>
         </table>
       )}
+      {outputs.length > 0 && (
+        <table className="compact" data-testid="outputs"><thead><tr><th>output</th><th>type</th><th>description</th></tr></thead>
+          <tbody>{outputs.map((o) => <tr key={o.name}><td><code>{o.name}</code></td><td>{o.type}</td><td>{o.description ?? ""}</td></tr>)}</tbody>
+        </table>
+      )}
       {questions.length > 0 && (
         <table className="compact"><thead><tr><th>question</th><th>type</th><th>threshold</th><th>instructions</th></tr></thead>
           <tbody>{questions.map((q) => (
             <tr key={q.name}>
               <td><code>{q.name}</code></td><td>{q.type}</td>
-              <td>{thresholds[q.name] !== undefined ? <>{thresholds[q.name]} <span className="muted">(override of {q.threshold})</span></> : q.threshold}</td>
+              <td>{q.threshold ?? <span className="muted">default</span>}</td>
               <td>{q.instructions}{q.criteria && <Criteria text={q.criteria} />}</td>
             </tr>
           ))}</tbody>
@@ -161,6 +179,34 @@ function StepCard({ step, isStart, isEnd, inputs, questions, resources, branches
   );
 }
 
+/** Every key, who produces it, and who reads it: the graph's data-flow arrows as rows. */
+function DataFlowTable({ info, flow }: { info: ProcedureInfo; flow: { key: string; from: string; to: string }[] }) {
+  const keys: { key: string; from: string; to: string[] }[] = [];
+  for (const e of flow) {
+    const row = keys.find((k) => k.key === e.key);
+    if (row) row.to.push(e.to);
+    else keys.push({ key: e.key, from: e.from, to: [e.to] });
+  }
+  // A key no step reads (a step's output kept only in the history) still has its producer.
+  const produced = [...(info.outputs ?? []).map((o) => [o.name, o.step]), ...info.questions.map((q) => [q.name, q.step])];
+  for (const [key, from] of produced) if (!keys.some((k) => k.key === key)) keys.push({ key, from, to: [] });
+  const step = (s: string) => (s === START_INPUT ? <span className="muted">start input</span> : <a href={`#step-${s}`}><code>{s}</code></a>);
+  return (
+    <table className="compact" aria-label="data flow">
+      <thead><tr><th>key</th><th>produced by</th><th>read by</th></tr></thead>
+      <tbody>
+        {keys.map((k) => (
+          <tr key={k.key} data-testid="data-flow-row" data-key={k.key} data-from={k.from} data-to={k.to.join(",")}>
+            <td><code>{k.key}</code></td>
+            <td>{step(k.from)}</td>
+            <td>{k.to.length ? k.to.map((t, i) => <span key={t}>{i ? ", " : ""}{step(t)}</span>) : <span className="muted">no step (kept in the history)</span>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Criteria({ text }: { text: string }) {
   let parsed: Record<string, string> | null = null;
   try { parsed = JSON.parse(text); } catch { /* shown raw */ }
@@ -172,18 +218,13 @@ function Criteria({ text }: { text: string }) {
 
 interface GovernanceProps { info: ProcedureInfo; entry: CatalogEntry | null; onChanged: () => void }
 
-/** Pin and retire this revision, and the per-question threshold overrides stored for the name. All need the
- *  publish scope: a 403 points at the Server page, where the token is set. */
+/** Pin and retire this revision. Both need the publish scope: a 403 points at the Server page, where the token
+ *  is set. Thresholds are the author's, from SKILL.md, so there is nothing to override here. */
 function Governance({ info, entry, onChanged }: GovernanceProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmRetire, setConfirmRetire] = useState(false);
-  // Overrides as typed, keyed by question name; blank means "no override for this question".
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
-  useEffect(() => {
-    setOverrides(Object.fromEntries(Object.entries(info.thresholds).map(([q, v]) => [q, String(v)])));
-  }, [info.thresholds]);
 
   const pinned = entry?.pinned ?? null;
   const isPinned = pinned === info.revision;
@@ -202,18 +243,6 @@ function Governance({ info, entry, onChanged }: GovernanceProps) {
     } finally {
       setBusy(false);
     }
-  };
-
-  const saveThresholds = () => {
-    const map: Record<string, number> = {};
-    for (const [q, raw] of Object.entries(overrides)) {
-      if (raw.trim() === "") continue;
-      const n = Number(raw);
-      if (!Number.isFinite(n) || n < 0 || n > 1) { setError(`threshold for ${q} must be a number between 0 and 1`); return; }
-      map[q] = n;
-    }
-    void act("saving thresholds", () => api.setThresholds(info.name, map),
-             Object.keys(map).length ? `Saved ${Object.keys(map).length} ${Object.keys(map).length === 1 ? "override" : "overrides"}.` : "Cleared every override.");
   };
 
   const short = (r: string) => r.slice(0, 8);
@@ -261,36 +290,6 @@ function Governance({ info, entry, onChanged }: GovernanceProps) {
           )}
         </div>
 
-        <div>
-          <h3>Threshold overrides</h3>
-          <p className="muted small">
-            Stored for <code>{info.name}</code> across revisions and merged under every step's own <code>thresholds</code>. Blank keeps the author's value.
-          </p>
-          {info.questions.length === 0 ? <p className="muted">No decision questions.</p> : (
-            <table className="compact" aria-label="threshold overrides">
-              <thead><tr><th>question</th><th>step</th><th>author's</th><th>override</th></tr></thead>
-              <tbody>
-                {info.questions.map((q) => (
-                  <tr key={`${q.step}:${q.name}`}>
-                    <td><code>{q.name}</code></td>
-                    <td><code>{q.step}</code></td>
-                    <td className="num">{q.threshold ?? <span className="muted">—</span>}</td>
-                    <td>
-                      <input className="threshold" type="number" min={0} max={1} step={0.05} aria-label={`override for ${q.name}`}
-                             value={overrides[q.name] ?? ""} placeholder="none"
-                             onChange={(e) => setOverrides({ ...overrides, [q.name]: e.target.value })} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {info.questions.length > 0 && (
-            <div className="actions">
-              <button type="button" disabled={busy} onClick={saveThresholds}>Save thresholds</button>
-            </div>
-          )}
-        </div>
       </div>
       {note && <p className="muted" data-testid="governance-note">{note}</p>}
       {error && <p className="error" role="alert">{error}</p>}

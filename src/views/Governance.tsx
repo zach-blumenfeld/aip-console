@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { CatalogEntry, GovernanceQuery, GovernanceRow } from "../api/types";
 import { href, navigate } from "../router";
@@ -15,16 +15,22 @@ export function Governance({ name }: { name?: string }) {
   const [window, setWindow] = useState(DEFAULT_WINDOW);
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     api.governance().then(setQueries).catch((e: unknown) => setError(describe(e)));
-    api.catalog().then((all: CatalogEntry[]) => setNames(all.map((c) => c.name))).catch(() => setNames([]));
   }, []);
+
+  useEffect(() => {
+    reload();
+    api.catalog().then((all: CatalogEntry[]) => setNames(all.map((c) => c.name))).catch(() => setNames([]));
+  }, [reload]);
 
   return (
     <article className="governance">
       <h1>Governance</h1>
       <p className="muted">
-        What the corpus says about the procedures and their runs. Pin, retire and threshold overrides live on each procedure's page.
+        What the corpus says about the procedures and their runs. Decisions, scripts and tasks run on the clients, and
+        each client reports who answered and how a script ended, so these lists cover every machine that ran a
+        procedure. Pin and retire live on each procedure's page; thresholds are the author's, in SKILL.md.
       </p>
       <div className="filters">
         <label>name{" "}
@@ -46,8 +52,67 @@ export function Governance({ name }: { name?: string }) {
 
       {error && <p className="error" role="alert">{error}</p>}
       {!error && queries === null && <p className="muted">Loading the queries…</p>}
-      {queries?.map((q) => <QueryList key={q.query} query={q} name={name} window={window} limit={limit} />)}
+      {queries?.map((q) => <QueryList key={q.query} query={q} name={name} window={window} limit={limit} onRemoved={reload} />)}
+      {queries !== null && <AddQuery onStored={reload} />}
     </article>
+  );
+}
+
+type Saving = { kind: "idle" } | { kind: "busy" } | { kind: "unsupported"; message: string } | { kind: "error"; message: string };
+
+/** Keep a query of your own: it runs on the server read-only, with the same parameters the built-ins get, and
+ *  appears in the list above. Only a backend with a query language (Neo4j) can keep one. */
+function AddQuery({ onStored }: { onStored: () => void }) {
+  const [query, setQuery] = useState("");
+  const [description, setDescription] = useState("");
+  const [cypher, setCypher] = useState("");
+  const [saving, setSaving] = useState<Saving>({ kind: "idle" });
+  const ready = /^[a-z0-9]+(-[a-z0-9]+)*$/.test(query) && cypher.trim().length > 0 && saving.kind !== "busy";
+
+  const store = () => {
+    setSaving({ kind: "busy" });
+    api.storeGovernanceQuery(query, { description, cypher })
+      .then(() => { setSaving({ kind: "idle" }); setQuery(""); setDescription(""); setCypher(""); onStored(); })
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 501) setSaving({ kind: "unsupported", message: e.message });
+        else setSaving({ kind: "error", message: describe(e) });
+      });
+  };
+
+  return (
+    <section className="query add-query" data-testid="add-query" data-state={saving.kind}>
+      <h2>Add a query</h2>
+      <p className="muted">
+        Cypher over the catalog and the runs, kept on the server and run read-only whenever this page asks. It may use
+        <code> $name</code>, <code>$window</code>, <code>$limit</code>, <code>$repeats</code> and <code>$ids</code> (the
+        resolved revisions) like the built-in queries. Needs the Neo4j backend.
+      </p>
+      <label className="field">
+        <span>name <span className="muted small">lowercase, digits and hyphens</span></span>
+        <input type="text" value={query} aria-label="query name" data-testid="query-name" disabled={saving.kind === "busy"}
+               onChange={(e) => setQuery(e.target.value.trim())} />
+      </label>
+      <label className="field">
+        <span>description</span>
+        <input type="text" value={description} aria-label="query description" data-testid="query-description"
+               disabled={saving.kind === "busy"} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>cypher</span>
+        <textarea className="json" rows={Math.min(16, Math.max(4, cypher.split("\n").length + 1))} value={cypher}
+                  aria-label="cypher" data-testid="query-cypher" disabled={saving.kind === "busy"}
+                  onChange={(e) => { setCypher(e.target.value); if (saving.kind !== "busy") setSaving({ kind: "idle" }); }} />
+      </label>
+      <div className="actions">
+        <button type="button" disabled={!ready} data-testid="store-query" onClick={store}>Keep this query</button>
+      </div>
+      {saving.kind === "error" && <p className="error small" role="alert">{saving.message}</p>}
+      {saving.kind === "unsupported" && (
+        <p className="muted small" data-testid="needs-graph">
+          <span className="status-tag">needs the Neo4j backend</span> {saving.message}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -57,8 +122,15 @@ type Answer =
   | { kind: "unsupported"; message: string }
   | { kind: "error"; message: string };
 
-function QueryList({ query, name, window, limit }: { query: GovernanceQuery; name?: string; window: number; limit: number }) {
+function QueryList({ query, name, window, limit, onRemoved }:
+                   { query: GovernanceQuery; name?: string; window: number; limit: number; onRemoved: () => void }) {
   const [answer, setAnswer] = useState<Answer>({ kind: "loading" });
+  const [removing, setRemoving] = useState<string | null>(null);   // an error message, or null
+
+  const remove = () => {
+    setRemoving(null);
+    api.removeGovernanceQuery(query.query).then(onRemoved).catch((e: unknown) => setRemoving(describe(e)));
+  };
 
   useEffect(() => {
     let live = true;
@@ -75,9 +147,16 @@ function QueryList({ query, name, window, limit }: { query: GovernanceQuery; nam
   }, [query.query, name, window, limit]);
 
   return (
-    <section className="query" data-testid="governance-query" data-query={query.query} data-state={answer.kind}>
-      <h2><code>{query.query}</code></h2>
-      <p className="muted">{query.description}</p>
+    <section className="query" data-testid="governance-query" data-query={query.query} data-state={answer.kind}
+             data-builtin={query.builtin ? "true" : "false"}>
+      <h2><code>{query.query}</code>{!query.builtin && <> <span className="status-tag" data-testid="stored-tag">stored</span></>}</h2>
+      {query.description && <p className="muted">{query.description}</p>}
+      {!query.builtin && (
+        <div className="actions">
+          <button type="button" data-testid="remove-query" onClick={remove}>Remove this query</button>
+          {removing && <span className="error small" role="alert">{removing}</span>}
+        </div>
+      )}
       {answer.kind === "loading" && <p className="muted">Asking…</p>}
       {answer.kind === "error" && <p className="error" role="alert">{answer.message}</p>}
       {answer.kind === "unsupported" && (
@@ -86,9 +165,19 @@ function QueryList({ query, name, window, limit }: { query: GovernanceQuery; nam
         </p>
       )}
       {answer.kind === "rows" && answer.rows.length === 0 && <p className="muted" data-testid="no-rows">Nothing to report.</p>}
-      {answer.kind === "rows" && answer.rows.length > 0 && <Rows rows={answer.rows} />}
+      {answer.kind === "rows" && answer.rows.length > 0 && <Rows rows={query.query === "manual-decisions" ? withResolvers(answer.rows) : answer.rows} />}
     </section>
   );
+}
+
+/** The resolver breakdown of a manual-decisions row: of the step's decisions, how many the client's decision
+ *  model answered and how many were answered by hand. */
+function withResolvers(rows: GovernanceRow[]): GovernanceRow[] {
+  return rows.map((row) => {
+    const decided = Number(row.decided), manual = Number(row.manual);
+    return Number.isFinite(decided) && Number.isFinite(manual)
+      ? { ...row, resolvers: { typesafe: decided - manual, manual } } : row;
+  });
 }
 
 /** Rows are flat; the columns are the keys in order of first appearance. */
@@ -100,7 +189,8 @@ function Rows({ rows }: { rows: GovernanceRow[] }) {
       <thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} data-testid="governance-row" data-name={cell(row.name)} data-step={cell(row.step)} data-question={cell(row.question)}>
+          <tr key={i} data-testid="governance-row" data-name={cell(row.name)} data-step={cell(row.step)} data-question={cell(row.question)}
+              data-resolver={cell(row.resolver)}>
             {columns.map((c) => <td key={c} className={typeof row[c] === "number" ? "num" : undefined}>{render(c, row[c], row)}</td>)}
           </tr>
         ))}
@@ -115,6 +205,22 @@ function cell(v: unknown): string | undefined {
 
 function render(column: string, value: unknown, row: GovernanceRow): React.ReactNode {
   if (value === null || value === undefined) return <span className="muted">—</span>;
+  if (column === "resolvers" && typeof value === "object") {
+    const { typesafe, manual } = value as { typesafe: number; manual: number };
+    const total = typesafe + manual || 1;
+    return (
+      <span data-testid="resolver-breakdown" data-typesafe={typesafe} data-manual={manual}>
+        <span className="resolver-bar" aria-hidden="true">
+          <span className="model" style={{ width: `${(100 * typesafe) / total}%` }} />
+          <span className="manual" style={{ width: `${(100 * manual) / total}%` }} />
+        </span>{" "}
+        model {typesafe} · by hand {manual}
+      </span>
+    );
+  }
+  if (column === "resolver" && typeof value === "string") return <span className="status-tag" data-testid="resolver">{value}</span>;
+  if (column === "stderr" && typeof value === "string") return value ? <pre className="stderr" data-testid="stderr">{value}</pre> : <span className="muted">empty</span>;
+  if (column === "exit_code" && typeof value === "number") return <code data-testid="exit-code">{value}</code>;
   if (column === "name" && typeof value === "string") {
     const ref = typeof row.revision === "string" ? `${value}@${row.revision}` : value;
     return <a href={href({ page: "procedure", ref })}><code>{value}</code></a>;

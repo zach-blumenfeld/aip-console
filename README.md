@@ -1,67 +1,85 @@
-# aip-inspector
+# aip-console
 
-A web client for an [AIP](https://github.com/zach-blumenfeld/aip) server. It speaks only
-the HTTP API in the server design (§4.2 and §7 of `docs/server-design.md` there): no private
-endpoints, the same calls the `aip` CLI makes.
+The console (formerly inspector) for [AIP](https://github.com/zach-blumenfeld/aip): catalog, source and
+revision diff, run console, history and governance. It is an npm package with its own small Node process;
+the aip server serves no UI.
 
-Views, in build order: catalog with the step graph drawn, source and revision diff, run
-console, history, governance. The plan is [`docs/PLAN.md`](docs/PLAN.md).
+```
+npx aip-console --server http://localhost:8000      # or: npx aip-console ./some-skill-folder
+```
 
-Routes are hash-based: `#/` catalog, `#/p/<name>[@rev]` procedure (with pin, retire and the
-per-question threshold overrides), `#/p/<ref>/files[/<path>]` source manifest and viewer,
-`#/p/<name>/diff[/<a>..<b>]` the diff between two revisions (manifest by hash, line diff for
-changed text files, both computed client-side), `#/run[/<ref>]` the run console, `#/runs[/<id>]`
-history, `#/governance` the corpus queries of `GET /governance` as lists, and `#/server`.
+The package installs two commands, `aip-console` and `aip-inspector`, which are the same. The process
+serves the page on `http://localhost:4280/` (`--port`), and:
 
-## Running
+- **the page calls the server directly** for catalog, history and governance: nothing is proxied. The aip
+  server answers CORS for loopback origins, where the console runs (`aip server --allow-origin` adds others).
+- **runs go through the `aip` CLI on this machine.** Starting a run spawns `aip run <name> --progress`;
+  answering a pause, or retrying a failed step, spawns `aip resume <run-id> --progress`. Each JSON line the
+  CLI prints (aip's `docs/cli-json.md`: one per completed step, then the pause, done or error object) is
+  relayed to the page as it arrives, over a server-sent event stream. Cancel kills the CLI and the
+  scripts it started. So scripts run here, next to the data: their files land in the working directory
+  (`--workdir`, default the current one), and decisions are resolved by this machine's decision model
+  (`aip config --decision-model`), or answered on the page when there is none. The CLI itself is started
+  from an empty directory and given the working directory as `--workdir`, so a folder in the working
+  directory named like a published skill (`./billing-support`) does not turn a served run into a local one.
 
-Against a server you already have:
+Without `--server`, the console uses the server `aip config` names. With a skill folder instead, runs are
+local (`aip run ./folder`) and the catalog, history and governance pages are hidden.
+
+At startup the console runs `aip --version` and refuses to start if `aip` is missing or older than
+`0.6a0`, the release with the JSON contract above and a run history that records client-task answers. `--aip PATH` (or `AIP_BIN`) picks another
+`aip` than the one on the PATH.
+
+The console's process answers only pages on this machine: it listens on 127.0.0.1, refuses a foreign
+`Host` (DNS rebinding) and any post that is not same-origin JSON, since a post starts a run.
+
+Routes are hash-based: `#/` catalog (with what each name's scripts require), `#/p/<name>[@rev]` procedure
+(its `requires`, each step's inputs and outputs, the graph as control flow or as key-level data flow, pin and
+retire),
+`#/p/<ref>/files[/<path>]` source manifest and viewer, `#/p/<name>/diff[/<a>..<b>]` the diff between two
+revisions (manifest by hash, line diff for changed text files, both computed client-side),
+`#/run[/<ref>]` the run console, `#/runs[/<id>]` history (each step's declared state in and out, the
+machine that ran it, and each decision's resolver and review status), `#/governance` the corpus queries of
+`GET /governance` as lists (with the model/by-hand split of `manual-decisions` and the stderr clients
+reported for `failing-scripts`), plus a form to keep a query of your own on the server, which a Neo4j-backed
+server stores and runs read-only and lists beside the built-ins, and `#/server` (the console's server, and a
+bearer token for this tab).
+
+## Developing
 
 ```
 npm install
-AIP_SERVER=http://localhost:8000 npm run dev      # http://localhost:5173/inspector/
+npm run build                                          # dist/, which bin/aip-console.mjs serves
+node bin/aip-console.mjs --server http://localhost:8000
 ```
 
-The dev server proxies `/catalog`, `/procedures`, `/runs`, and `/governance` to
-`AIP_SERVER`, so the app is same-origin and the server needs no CORS. The Server page
-(`#/server`) stores a server URL in `localStorage` and a bearer token in `sessionStorage`
-(the design says the token never outlives the session); the token is what pin, retire and
-thresholds need off localhost.
+For hot reload, keep that process running and start Vite beside it: `npm run dev` serves the page on
+`http://localhost:5173/` and proxies `/console` to the console's process (`CONSOLE`, default
+`http://localhost:4280`).
 
 To start a server, from a clone of the aip repo:
 
 ```
 uv run aip server --backend filesystem --root /tmp/aip-root --port 8000
-AIP_SERVER=http://localhost:8000 uv run aip publish examples/billing-support
+AIP_SERVER=http://localhost:8000 uv run aip publish "$(uv run aip-spec example billing-support --out /tmp)"
 ```
-
-## Building
-
-`npm run build` writes `dist/`, a static bundle with base path `/inspector/`. The aip
-package ships a copy of it and serves it from `aip server --inspector`:
-
-```
-npm run build && npm run sync      # copies dist/ to $AIP_REPO/src/aip/server/inspector/ (default ../aip)
-cd ../aip && uv run aip server --backend filesystem --root /tmp/aip-root --inspector   # http://localhost:8000/inspector/
-```
-
-The sync replaces that directory wholesale, so commit it in the aip repo whenever the
-bundle changes; `aip server --inspector DIR` serves any built `dist/` instead, and a missing
-bundle answers 404 with the command that fills it.
 
 ## Tests
 
-`npm run e2e` starts a filesystem-backed `aip server` from the sibling aip repo
-(`AIP_REPO`, default `../aip`, needs `uv`), publishes `billing-support` into a
-throwaway root under `.aip-e2e/` (twice: the example, then a copy with one line of
-`assets/policy.md` changed, so the diff view has two revisions), starts Vite against it, and drives the app in
-headless Chromium. The governance spec seeds one run with a model-answered decision through the
-backend's `RunBackend` interface, since the e2e server has no decision model and a manual
-decision is never "overridden". That server is started with `AIP_CONFIG` pointed at nothing and
-`TYPESAFE_API_KEY` empty, so a `~/.config/aip/server.toml` or a key in your shell cannot change it. First time: `npx playwright install chromium`, or skip the download
-and drive an installed Google Chrome with `PLAYWRIGHT_CHANNEL=chrome npm run e2e`.
+`npm run e2e` needs the sibling aip repo (`AIP_REPO`, default `../aip`) and `uv`. Before anything starts,
+`e2e/prepare.mjs` writes a fresh `.aip-e2e/`: an `aip` on the consoles' PATH that runs the aip repo's CLI,
+and two revisions of aip-spec's `billing-support` whose escalate script files its ticket under the run's
+working directory (and fails, or stalls, when the message asks it to). Then the bundle is built and three
+processes start: a filesystem-backed `aip server`, the console against it, and the console on the first
+revision's folder. Global setup publishes both revisions. The CLI runs with its own `AIP_HOME`, no
+`AIP_CONFIG` and no `TYPESAFE_API_KEY`, so nothing on your machine changes what the specs see, and every
+decision pauses for the page to answer.
 
-Every spec runs twice, as two Playwright projects: `vite` against the dev server, then `bundle`
-against the freshly built `dist/` served by that same `aip server --inspector dist`, the way
-the package ships it (the aip server's start command runs `npm run build` first). The two share
-one backend root, so the second pass also covers the specs' reused-root paths.
+The `console` project drives both branches from the run page (the escalate script's ticket must land in the
+console's working directory), a failing script and its retry, cancel, history with attribution, governance,
+the 0.6a0 views over fixture runs posted to the run API (a model-answered decision, a script reported from
+another machine, a failed script), and the launcher itself (an old `aip` on the PATH, `aip config`, the loopback guards). The `folder` project
+runs the same skill from the folder console with no server.
+
+First time: `npx playwright install chromium`, or skip the download and drive an installed Google Chrome
+with `PLAYWRIGHT_CHANNEL=chrome npm run e2e`.

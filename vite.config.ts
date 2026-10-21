@@ -1,20 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The bundle is served by `aip server --inspector` under /inspector, so the base
-// is fixed. In development the same four API prefixes are proxied to a running
-// server (AIP_SERVER, default http://localhost:8000), which keeps the app
-// same-origin in both cases and the server free of CORS.
-const server = process.env.AIP_SERVER ?? "http://localhost:8000";
-const api = ["/catalog", "/procedures", "/runs", "/governance"];
+// The bundle is served at the root by the console's own process (bin/aip-console.mjs). In development,
+// run that process too (`node bin/aip-console.mjs --server URL --port 4280`, after one `npm run build`)
+// and Vite proxies its /console endpoints to it (CONSOLE, default http://localhost:4280); the page
+// calls the AIP server directly either way.
+const launcher = process.env.CONSOLE ?? "http://localhost:4280";
 
 export default defineConfig({
-  base: "/inspector/",
+  base: "/",
   plugins: [react()],
   server: {
     port: Number(process.env.PORT ?? 5173),
     strictPort: true,
-    proxy: Object.fromEntries(api.map((p) => [p, { target: server, changeOrigin: true }])),
+    proxy: { "/console": { target: launcher, changeOrigin: true } },
   },
   build: { outDir: "dist", emptyOutDir: true },
 });
