@@ -38,7 +38,7 @@ a folder with `SKILL.md`, zipped, is unpacked in the page and posted to the serv
 the skill from the frontmatter, so an existing name gets a new revision and the same bytes land on the revision
 already there; the validator's issues are listed when it is refused), `#/p/<name>[@rev]` procedure
 (its `requires`, each step's inputs and outputs, the graph as control flow, as key-level data flow, or as run
-traffic, where every recorded run of the name is read and each edge thickens with the runs that took it, each
+traffic, where every recorded run of the revision is read and each edge thickens with the runs that took it, each
 step wears the runs that reached it and how many failed there, and a table below ranks the steps by reach; pin
 and retire, and `download zip`: the revision as `<name>@<rev>.zip` with one `<name>/` folder inside, the Agent Skills
 layout, packed in the page from the manifest and the files),

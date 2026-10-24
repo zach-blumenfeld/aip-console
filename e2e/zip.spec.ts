@@ -153,6 +153,17 @@ test("run traffic weights the graph's edges by the runs that took them", async (
   // The other two modes are untouched by it.
   await page.getByLabel("control flow").check();
   await expect(graph.locator('[data-testid="edge-runs"]')).toHaveCount(0);
+
+  // Both runs were on the latest revision. The one before shares its start and end, but its traffic is its own:
+  // nothing, with the two runs named as left out.
+  const revisions = page.getByRole("combobox", { name: "revision" });
+  const older = (await revisions.locator("option").nth(1).getAttribute("value"))!;
+  await revisions.selectOption(older);
+  await expect(page).toHaveURL(new RegExp(`#/p/${NAME}(%40|@)${older}$`));
+  await page.getByLabel("run traffic").check();
+  await expect(summary).toHaveAttribute("data-runs", "0");
+  await expect(summary).toContainText("2 runs of this name on other revisions are not counted");
+  await expect(graph.locator('[data-testid="step-node"][data-step="end"] [data-testid="step-runs"]')).toHaveAttribute("data-runs", "0");
 });
 
 test("a name whose every revision is retired is hidden from the catalog unless asked for, and cannot be run", async ({ page, request }) => {

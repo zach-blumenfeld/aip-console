@@ -3,8 +3,9 @@ import { api } from "../api/client";
 import type { RunSummary } from "../api/types";
 import { describe } from "./Source";
 
-/** How the recorded runs of a name went through its graph: runs per edge and per step, by step name, so runs
- *  on other revisions of the name count where their steps still exist. */
+/** How the recorded runs of one revision went through its graph: runs per edge and per step. Runs on other
+ *  revisions of the name are left out, since their graph may differ: a step they share with this revision (start,
+ *  end) would otherwise outweigh the steps they do not. */
 export interface Traffic {
   /** Runs per `from->to` edge. */
   edges: Map<string, number>;
@@ -12,9 +13,10 @@ export interface Traffic {
   steps: Map<string, number>;
   /** Runs that failed at each step. */
   failed: Map<string, number>;
-  /** How many runs ended where (an edge or a step count is out of `runs`). */
+  /** Runs on this revision (an edge or a step count is out of `runs`). */
   runs: number;
-  onRevision: number;
+  /** Runs of the name on every revision, this one included. */
+  ofName: number;
   byStatus: Record<string, number>;
 }
 
@@ -26,7 +28,7 @@ export type TrafficState =
 const LIMIT = 1000;        // the server's cap on one listing
 const CONCURRENCY = 8;
 
-/** Fetch every run of `name` (newest LIMIT) and fold their histories, while `enabled`. */
+/** Fetch every run of `name` (newest LIMIT), fold the histories of those on `revision`, while `enabled`. */
 export function useTraffic(name: string, revision: string, enabled: boolean): TrafficState | null {
   const [state, setState] = useState<TrafficState | null>(null);
   useEffect(() => {
@@ -34,10 +36,11 @@ export function useTraffic(name: string, revision: string, enabled: boolean): Tr
     let cancelled = false;
     setState({ state: "loading", done: 0, total: 0 });
     (async () => {
-      const runs = await api.runs({ name, limit: LIMIT });
+      const all = await api.runs({ name, limit: LIMIT });
       if (cancelled) return;
+      const runs = all.filter((r) => r.revision === revision);
       setState({ state: "loading", done: 0, total: runs.length });
-      const traffic = empty(runs, revision);
+      const traffic = empty(runs, all.length);
       let next = 0, done = 0;
       const worker = async () => {
         while (next < runs.length && !cancelled) {
@@ -58,11 +61,10 @@ export function useTraffic(name: string, revision: string, enabled: boolean): Tr
   return enabled ? state : null;
 }
 
-function empty(runs: RunSummary[], revision: string): Traffic {
+function empty(runs: RunSummary[], ofName: number): Traffic {
   const byStatus: Record<string, number> = {};
   for (const r of runs) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
-  return { edges: new Map(), steps: new Map(), failed: new Map(), runs: runs.length,
-           onRevision: runs.filter((r) => r.revision === revision).length, byStatus };
+  return { edges: new Map(), steps: new Map(), failed: new Map(), runs: runs.length, ofName, byStatus };
 }
 
 function fold(t: Traffic, history: { step: string; kind: string }[]) {
@@ -80,20 +82,28 @@ function fold(t: Traffic, history: { step: string; kind: string }[]) {
   for (const s of steps) t.steps.set(s, (t.steps.get(s) ?? 0) + 1);
 }
 
-/** The line above the graph: how many runs, how they ended, and how many were on this revision. */
+/** The line above the graph: how many runs of this revision, how they ended, and how many of the name's runs
+ *  are on other revisions and so left out. */
 export function TrafficSummary({ state }: { state: TrafficState }) {
   if (state.state === "loading") {
     return <p className="muted small" data-testid="traffic-loading">Reading {state.total ? `${state.done} of ${state.total} runs` : "the runs"}…</p>;
   }
   if (state.state === "error") return <p className="error" role="alert">{state.message}</p>;
   const t = state.traffic;
-  if (t.runs === 0) return <p className="muted small" data-testid="traffic-summary">No runs of this procedure yet; edges thicken with the runs that take them.</p>;
+  const others = t.ofName - t.runs;
+  const elsewhere = others ? ` ${others} ${others === 1 ? "run" : "runs"} of this name on other revisions ${others === 1 ? "is" : "are"} not counted.` : "";
+  if (t.runs === 0) {
+    return (
+      <p className="muted small" data-testid="traffic-summary" data-runs={0} data-of-name={t.ofName}>
+        No runs of this revision yet; edges thicken with the runs that take them.{elsewhere}
+      </p>
+    );
+  }
   const ended = Object.entries(t.byStatus).sort().map(([s, n]) => `${n} ${s}`).join(", ");
   return (
-    <p className="muted small" data-testid="traffic-summary" data-runs={t.runs}>
-      {t.runs === LIMIT ? `The newest ${LIMIT} runs` : `${t.runs} ${t.runs === 1 ? "run" : "runs"}`} of this name ({ended}),
-      {" "}{t.onRevision === t.runs ? "all" : t.onRevision} on this revision. Edges thicken with the runs that took them; a step's badge is the runs
-      that reached it, red when some failed there.
+    <p className="muted small" data-testid="traffic-summary" data-runs={t.runs} data-of-name={t.ofName}>
+      {t.ofName === LIMIT ? `${t.runs} of the newest ${LIMIT} runs of this name are` : `${t.runs} ${t.runs === 1 ? "run" : "runs"}`} on this revision ({ended}).
+      Edges thicken with the runs that took them; a step's badge is the runs that reached it, red when some failed there.{elsewhere}
     </p>
   );
 }
