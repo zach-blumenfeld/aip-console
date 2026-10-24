@@ -5,7 +5,7 @@ import { dataFlow, groupFlow, START_INPUT } from "../graph/dataflow";
 import { href, navigate } from "../router";
 import { Requires } from "./Requires";
 import { describe } from "./Source";
-import { StepGraph } from "./StepGraph";
+import { DirectionToggle, StepGraph, useDirection } from "./StepGraph";
 import { TrafficSummary, TrafficTable, useTraffic } from "./Traffic";
 import { DownloadZip, PublishedBanner } from "./Zip";
 
@@ -16,6 +16,7 @@ export function Procedure({ reference }: { reference: string }) {
   // Bumped after pin or retire: both fetches run again, the page stays up meanwhile.
   const [version, setVersion] = useState(0);
   const [mode, setMode] = useState<"control" | "data" | "traffic">("control");
+  const [direction, setDirection] = useDirection();
   const name = reference.split("@")[0];
   const flow = useMemo(() => (info ? dataFlow(info) : []), [info]);
   const traffic = useTraffic(name, info?.revision ?? "", mode === "traffic" && info !== null);
@@ -51,17 +52,21 @@ export function Procedure({ reference }: { reference: string }) {
       <PublishedBanner key={info.id} reference={info.id} />
 
       <div className="procedure-grid">
-        <section>
+        {/* Left to right, the graph is wide: the section takes the whole row and the rest moves below. */}
+        <section className={direction === "right" ? "wide" : undefined}>
           <h2>Steps</h2>
-          <div className="flow-toggle" role="radiogroup" aria-label="graph">
-            <label><input type="radio" name="flow" checked={mode === "control"} onChange={() => setMode("control")} /> control flow</label>
-            <label><input type="radio" name="flow" checked={mode === "data"} onChange={() => setMode("data")} /> data flow</label>
-            <label><input type="radio" name="flow" checked={mode === "traffic"} onChange={() => setMode("traffic")} /> run traffic</label>
+          <div className="graph-controls">
+            <div className="flow-toggle" role="radiogroup" aria-label="graph">
+              <label><input type="radio" name="flow" checked={mode === "control"} onChange={() => setMode("control")} /> control flow</label>
+              <label><input type="radio" name="flow" checked={mode === "data"} onChange={() => setMode("data")} /> data flow</label>
+              <label><input type="radio" name="flow" checked={mode === "traffic"} onChange={() => setMode("traffic")} /> run traffic</label>
+            </div>
+            <DirectionToggle direction={direction} onChange={setDirection} />
           </div>
           {traffic && <TrafficSummary state={traffic} />}
           <StepGraph steps={info.step_details} edges={info.edges} branches={info.branches}
                      start={info.start.step} end={info.end.step} flow={mode === "data" ? groupFlow(flow) : undefined}
-                     traffic={traffic?.state === "ready" ? traffic.traffic : undefined} />
+                     traffic={traffic?.state === "ready" ? traffic.traffic : undefined} direction={direction} />
           {mode === "data" && <DataFlowTable info={info} flow={flow} />}
           {traffic?.state === "ready" && traffic.traffic.runs > 0 && <TrafficTable traffic={traffic.traffic} steps={info.step_details.map((s) => s.name)} />}
         </section>

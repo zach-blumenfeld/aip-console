@@ -39,7 +39,9 @@ the skill from the frontmatter, so an existing name gets a new revision and the 
 already there; the validator's issues are listed when it is refused), `#/p/<name>[@rev]` procedure
 (its `requires`, each step's inputs and outputs, the graph as control flow, as key-level data flow, or as run
 traffic, where every recorded run of the revision is read and each edge thickens with the runs that took it, each
-step wears the runs that reached it and how many failed there, and a table below ranks the steps by reach; pin
+step wears the runs that reached it and how many failed there, and a table below ranks the steps by reach; the
+graph draws top-down or, with `left to right` ticked, across the page, a choice the browser remembers for the run page
+too; pin
 and retire, and `download zip`: the revision as `<name>@<rev>.zip` with one `<name>/` folder inside, the Agent Skills
 layout, packed in the page from the manifest and the files),
 `#/p/<ref>/files[/<path>]` source manifest and viewer (with the same download), `#/p/<name>/diff[/<a>..<b>]` the diff between two

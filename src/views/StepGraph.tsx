@@ -1,12 +1,15 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { START_INPUT } from "../graph/dataflow";
-import { layout } from "../graph/layout";
+import { layout, type Direction } from "../graph/layout";
 import type { Branch, Edge, StepDetail } from "../api/types";
 import type { Traffic } from "./Traffic";
 
 const W = 150, H = 48, PAD = 24;
-// Data-flow arrows run down the right of the nodes, one lane per arrow that skips a layer.
+// Data-flow arrows run along the outside of the nodes (right of them top-down, below them left-to-right), one
+// lane per arrow that skips a layer.
 const LANE = 26, LANE_GAP = 20;
+// Left to right, the layers sit closer: a horizontal edge's label needs no room above it.
+const LAYER_GAP: Record<Direction, number> = { down: 70, right: 52 };
 
 interface Props {
   steps: StepDetail[];
@@ -23,22 +26,29 @@ interface Props {
   flow?: { from: string; to: string; keys: string[] }[];
   /** Weight the control edges by the runs that took them and badge each step with the runs that reached it. */
   traffic?: Traffic;
+  /** Layers top-down (the default) or left-to-right. */
+  direction?: Direction;
 }
 
-export function StepGraph({ steps, edges, branches, start, end, visited, taken: takenEdges, flow, traffic }: Props) {
+export function StepGraph({ steps, edges, branches, start, end, visited, taken: takenEdges, flow, traffic, direction = "down" }: Props) {
   const g = useMemo(() => {
     const all = [
       ...edges.map((e) => ({ from: e.from, to: e.to })),
       ...branches.map((b) => ({ from: b.router, to: b.to, label: b.value })),
     ];
     const nodes = steps.map((s) => ({ id: s.name }));
-    // The start input sits above the start step; its edge to the start is only there to place it.
-    if (flow) return layout([{ id: START_INPUT }, ...nodes], [{ from: START_INPUT, to: start }, ...all], { nodeWidth: W, nodeHeight: H, start: START_INPUT });
-    return layout(nodes, all, { nodeWidth: W, nodeHeight: H, start });
-  }, [steps, edges, branches, start, flow]);
+    const opts = { nodeWidth: W, nodeHeight: H, layerGap: LAYER_GAP[direction], direction };
+    // The start input sits before the start step; its edge to the start is only there to place it.
+    if (flow) return layout([{ id: START_INPUT }, ...nodes], [{ from: START_INPUT, to: start }, ...all], { ...opts, start: START_INPUT });
+    return layout(nodes, all, { ...opts, start });
+  }, [steps, edges, branches, start, flow, direction]);
   const byName = new Map(steps.map((s) => [s.name, s]));
-  const data = useMemo(() => (flow ? route(flow, g.nodes) : []), [flow, g]);
-  const right = data.length ? Math.max(0, ...data.map((d) => d.reach - g.width)) + 8 : 0;
+  const data = useMemo(() => (flow ? route(flow, g.nodes, direction) : []), [flow, g, direction]);
+  // Data lanes reach past the nodes along the order axis: the width top-down, the height left-to-right.
+  const across = direction === "down" ? g.width : g.height;
+  const extra = data.length ? Math.max(0, ...data.map((d) => d.reach - across)) + 8 : 0;
+  const width = g.width + 2 * PAD + (direction === "down" ? extra : 0);
+  const height = g.height + 2 * PAD + (direction === "right" ? extra : 0);
   const controlEdges = g.edges.filter((e) => e.from !== START_INPUT);
   const busiest = traffic ? Math.max(1, ...traffic.edges.values()) : 1;
 
@@ -47,9 +57,10 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
       className={`step-graph${flow ? " data-mode" : ""}${traffic ? " traffic-mode" : ""}`}
       role="img"
       aria-label="step graph"
-      viewBox={`${-PAD} ${-PAD} ${g.width + 2 * PAD + right} ${g.height + 2 * PAD}`}
-      width={g.width + 2 * PAD + right}
-      height={g.height + 2 * PAD}
+      data-direction={direction}
+      viewBox={`${-PAD} ${-PAD} ${width} ${height}`}
+      width={width}
+      height={height}
     >
       <defs>
         {/* userSpaceOnUse: the head stays this size however thick the traffic mode draws the line. */}
@@ -80,7 +91,9 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
                 {e.label}
               </text>
             )}
-            {runs ? <text x={mx + 9 + width / 2} y={my + 4} textAnchor="start" className="run-count" data-testid="edge-runs">{runs}</text> : null}
+            {runs ? (direction === "down"
+              ? <text x={mx + 9 + width / 2} y={my + 4} textAnchor="start" className="run-count" data-testid="edge-runs">{runs}</text>
+              : <text x={mx} y={my + 13 + width / 2} textAnchor="middle" className="run-count" data-testid="edge-runs">{runs}</text>) : null}
           </g>
         );
       })}
@@ -88,7 +101,7 @@ export function StepGraph({ steps, edges, branches, start, end, visited, taken: 
         <g key={`${d.from}=>${d.to}`} className="data-edge" data-testid="data-edge" data-from={d.from} data-to={d.to}
            data-keys={d.keys.join(",")}>
           <path d={d.path} fill="none" stroke="currentColor" strokeWidth={1.5} strokeDasharray="5 3" markerEnd="url(#data-arrow)" />
-          <text x={d.label[0]} y={d.label[1]} className="data-label" data-testid="data-label">{d.keys.join(", ")}</text>
+          <text x={d.label[0]} y={d.label[1]} textAnchor={d.anchor} className="data-label" data-testid="data-label">{d.keys.join(", ")}</text>
         </g>
       ))}
       {g.nodes.map((n) => {
@@ -139,12 +152,20 @@ function Badge({ runs, failed, total }: { runs: number; failed: number; total: n
   );
 }
 
-interface Routed { from: string; to: string; keys: string[]; path: string; label: [number, number]; reach: number }
+interface Routed { from: string; to: string; keys: string[]; path: string; label: [number, number]; anchor: "start" | "middle"; reach: number }
 
-/** Paths for the data arrows: one to the next layer leaves the producer's bottom a little right of the control
- *  edge; a longer one leaves its right side and curves out to a lane of its own, so arrows that skip layers
- *  never cross a node. `reach` is how far right the arrow goes. */
-function route(flow: { from: string; to: string; keys: string[] }[], nodes: { id: string; x: number; y: number; layer: number }[]): Routed[] {
+/** Paths for the data arrows, in the layout's (order, rank) terms: one to the next layer leaves the producer's
+ *  rank-end side a little past the control edge; a longer one leaves its outer side and curves out to a lane
+ *  of its own, so arrows that skip layers never cross a node. `reach` is how far along the order axis the
+ *  arrow and its label go. */
+function route(flow: { from: string; to: string; keys: string[] }[], nodes: { id: string; x: number; y: number; layer: number }[], direction: Direction): Routed[] {
+  const down = direction === "down";
+  const sizeO = down ? W : H, sizeR = down ? H : W;
+  const O = (n: { x: number; y: number }) => (down ? n.x : n.y), R = (n: { x: number; y: number }) => (down ? n.y : n.x);
+  const P = (o: number, r: number): [number, number] => (down ? [o, r] : [r, o]);
+  const pt = (o: number, r: number) => P(o, r).join(" ");
+  // A label's extent along the order axis: its length top-down, its height left-to-right.
+  const labelReach = (o: number, keys: string[]) => o + (down ? textWidth(keys) : 12);
   const at = new Map(nodes.map((n) => [n.id, n]));
   const placed = flow.filter((f) => at.has(f.from) && at.has(f.to));
   const long = placed.filter((f) => at.get(f.to)!.layer - at.get(f.from)!.layer !== 1)
@@ -153,16 +174,47 @@ function route(flow: { from: string; to: string; keys: string[] }[], nodes: { id
     const a = at.get(f.from)!, b = at.get(f.to)!;
     const lane = long.indexOf(f);
     if (lane < 0) {
-      const x0 = a.x + W / 2 + 14, x1 = b.x + W / 2 + 14, y0 = a.y + H, y1 = b.y;
-      const label: [number, number] = [(x0 + x1) / 2 + 6, (y0 + y1) / 2 + 4];
-      return { ...f, path: `M ${x0} ${y0} L ${x1} ${y1}`, label, reach: label[0] + textWidth(f.keys) };
+      const o0 = O(a) + sizeO / 2 + 14, o1 = O(b) + sizeO / 2 + 14, r0 = R(a) + sizeR, r1 = R(b);
+      const path = `M ${pt(o0, r0)} L ${pt(o1, r1)}`;
+      // Top-down the label sits beside the arrow; left-to-right the gap is narrow, so it hangs below the nodes,
+      // centred on the gap.
+      if (down) {
+        const lo = (o0 + o1) / 2 + 6;
+        return { ...f, path, label: P(lo, (r0 + r1) / 2 + 4), anchor: "start", reach: labelReach(lo, f.keys) };
+      }
+      const lo = Math.max(O(a), O(b)) + sizeO + 12;
+      return { ...f, path, label: P(lo, (r0 + r1) / 2), anchor: "middle", reach: labelReach(lo, f.keys) };
     }
-    const x0 = a.x + W, y0 = a.y + H / 2 + 6, x1 = b.x + W, y1 = b.y + H / 2 - 6;
-    const cx = Math.max(x0, x1) + LANE + lane * LANE_GAP;
-    const path = `M ${x0} ${y0} C ${cx} ${y0}, ${cx} ${y1}, ${x1} ${y1}`;
-    const label: [number, number] = [0.25 * x0 + 0.75 * cx + 4, (y0 + y1) / 2];
-    return { ...f, path, label, reach: Math.max(cx, label[0] + textWidth(f.keys)) };
+    const o0 = O(a) + sizeO, r0 = R(a) + sizeR / 2 + 6, o1 = O(b) + sizeO, r1 = R(b) + sizeR / 2 - 6;
+    const co = Math.max(o0, o1) + LANE + lane * LANE_GAP;
+    const path = `M ${pt(o0, r0)} C ${pt(co, r0)}, ${pt(co, r1)}, ${pt(o1, r1)}`;
+    const lo = 0.25 * o0 + 0.75 * co + 4;
+    return { ...f, path, label: P(lo, (r0 + r1) / 2), anchor: "start", reach: Math.max(co, labelReach(lo, f.keys)) };
   });
+}
+
+// ------------------------------------------------------------------ the direction, remembered per browser
+
+const DIRECTION_KEY = "aip-console.graph-direction";
+
+/** The graph direction the viewer last chose, kept in localStorage (best effort: private windows may refuse). */
+export function useDirection(): [Direction, (d: Direction) => void] {
+  const [direction, setDirection] = useState<Direction>(() => {
+    try { return localStorage.getItem(DIRECTION_KEY) === "right" ? "right" : "down"; } catch { return "down"; }
+  });
+  const choose = (d: Direction) => {
+    setDirection(d);
+    try { localStorage.setItem(DIRECTION_KEY, d); } catch { /* the choice lasts the page */ }
+  };
+  return [direction, choose];
+}
+
+export function DirectionToggle({ direction, onChange }: { direction: Direction; onChange: (d: Direction) => void }) {
+  return (
+    <label className="direction-toggle">
+      <input type="checkbox" checked={direction === "right"} onChange={(e) => onChange(e.target.checked ? "right" : "down")} /> left to right
+    </label>
+  );
 }
 
 /** Roughly how wide a label of these keys draws at 11px. */
