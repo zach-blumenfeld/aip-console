@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 //                         #/runs[?name=&status=]      history: the runs the server persisted
 //                         #/runs/<id>                 one run replayed as a trace over the step graph
 //                         #/governance[?name=]        the corpus queries of GET /governance as lists
+//                         #/studio                    build a procedure in the browser, exported as a skill zip
 //                         #/server                    the console's server, and the bearer token for this browser
 export type Route =
   | { page: "catalog" }
@@ -20,6 +21,7 @@ export type Route =
   | { page: "runs"; name?: string; status?: string }
   | { page: "run-detail"; id: string }
   | { page: "governance"; name?: string }
+  | { page: "studio" }
   | { page: "server" }
   | { page: "missing"; hash: string };
 
@@ -49,6 +51,7 @@ export function parseHash(hash: string): Route {
   if (m) return { page: "run-detail", id: decodeURIComponent(m[1]) };
   m = /^governance(?:\?(.*))?$/.exec(path);
   if (m) return { page: "governance", name: new URLSearchParams(m[1] ?? "").get("name") ?? undefined };
+  if (path === "studio") return { page: "studio" };
   if (path === "server") return { page: "server" };
   return { page: "missing", hash };
 }
@@ -73,6 +76,7 @@ export function href(route: Route): string {
     }
     case "run-detail": return `#/runs/${encodeURIComponent(route.id)}`;
     case "governance": return `#/governance${route.name ? "?name=" + encodeURIComponent(route.name) : ""}`;
+    case "studio": return "#/studio";
     case "server": return "#/server";
     case "missing": return route.hash;
   }
