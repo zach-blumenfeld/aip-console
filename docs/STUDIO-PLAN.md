@@ -117,7 +117,9 @@ No UI. Pure TypeScript under `src/studio/`, unit-tested with Node's test runner 
 Proof: `npm run typecheck && npm run e2e` with the new lint tests passing, and the parity test
 printing the number of fixtures compared and zero disagreements.
 
-## - [ ] S1: The Studio tab: graph and step editor
+## - [x] S1: The Studio tab: graph and step editor
+
+Done 2026-10-29, commit cdebfae: `#/studio` with the selectable step graph (add-after splice, delete re-link, set start), a side panel per step kind and for the procedure, a live lint panel with node markers, and localStorage autosave; the tab also shows in folder mode. Inputs and outputs are not editable until S2, so the proof asserts the wiring rules clean, not the whole lint.
 
 - Route `#/studio` (and `#/studio/<draftId>` if more than one draft is kept; v1 may keep one). Add to
   `Route`, `parseHash`, `href`, and the nav in `App.tsx`. The tab appears in folder mode too (it
