@@ -104,6 +104,28 @@ export function addStepAfter(d: Draft, afterId: string | undefined, kind: StepKi
   return { draft: out, id: step.id };
 }
 
+/** Make a step of `kind` the target of one branch row of a router. A step the row already led to follows it, as
+ *  with a splice, so nothing is cut off. Returns the Draft and the new step's id. */
+export function addStepOnBranch(d: Draft, routerId: string, index: number, kind: StepKind): { draft: Draft; id: string } {
+  const out = structuredClone(d);
+  const router = out.steps.find((s) => s.id === routerId);
+  const row = router?.branches?.[index];
+  if (!router || !row) return { draft: out, id: routerId };
+  const step = newStep(kind, out.steps);
+  const old = row.target;
+  out.steps.splice(out.steps.indexOf(router) + 1, 0, step);
+  row.target = step.id;
+  if (old !== undefined) {
+    if (kind === "router") step.branches = [{ value: "", target: old }, { value: "" }];
+    else if (kind !== "end") step.next = old;
+  }
+  if (kind === "router") {
+    while ((step.branches ??= []).length < 2) step.branches.push({ value: "" });
+    return { draft: prefillBranches(out, step.id), id: step.id };
+  }
+  return { draft: out, id: step.id };
+}
+
 /** Remove a step. What pointed at it points at its successor when it has exactly one; otherwise the edges are
  *  left dangling (unset) for the linter to report. Removing the start makes the successor the start. */
 export function deleteStep(d: Draft, id: string): Draft {

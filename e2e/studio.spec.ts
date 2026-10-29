@@ -15,6 +15,8 @@ const idOf = async (page: Page, name: string) => (await page.locator(`[data-test
 const edge = async (page: Page, from: string, to: string) =>
   page.locator(`[data-testid="step-edge"][data-from="${await idOf(page, from)}"][data-to="${await idOf(page, to)}"]`);
 const rename = async (page: Page, name: string) => { await field(page, "name").fill(name); await expect(node(page, name)).toBeVisible(); };
+const onBranch = (page: Page, n: number, kind: string) =>
+  panel(page).getByRole("group", { name: `New step on branch ${n}` }).getByRole("button", { name: `+ ${kind}` }).click();
 const addAfter = (page: Page, after: string, kind: string) =>
   page.getByRole("group", { name: `Add step after ${after}` }).getByRole("button", { name: `+ ${kind}` }).click();
 
@@ -38,11 +40,12 @@ test("build billing-support by hand, reload, and the draft and its wiring are ke
   await expect(panel(page).getByLabel("branch 1 value")).toHaveValue("angry");
   await expect(panel(page).getByLabel("branch 2 value")).toHaveValue("calm");
 
-  // each new step after the router takes the next open branch
-  await addAfter(page, "by-tone", "execution");
+  // a step is made from the branch row it belongs to
+  await onBranch(page, 1, "execution");
   await rename(page, "escalate");
   await node(page, "by-tone").click();
-  await addAfter(page, "by-tone", "client_task");
+  await onBranch(page, 2, "client_task");
+  await expect(panel(page).getByRole("heading", { name: /^client-task-1/ })).toBeVisible();
   await rename(page, "reply");
   await node(page, "escalate").click();
   await addAfter(page, "escalate", "end");

@@ -232,7 +232,7 @@ tr[data-retired] td { opacity: 0.6; }
 .studio-panel .field textarea { width: 100%; min-height: 3.5rem; }
 .studio-panel .field input[aria-invalid="true"] { border-color: #b00020; }
 .studio-panel .field .hint { font-size: 0.85rem; }
-.studio-panel .row { display: flex; gap: 0.4rem; align-items: center; margin: 0.25rem 0; }
+.studio-panel .row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.25rem 0; }
 .studio-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .studio-panel .row button, .studio-panel .add-kinds button { font: inherit; font-size: 0.85rem; }
 .studio-panel .add-kinds { display: flex; gap: 0.35rem; flex-wrap: wrap; margin: 0.25rem 0 0.75rem; }

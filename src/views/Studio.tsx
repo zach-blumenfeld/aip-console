@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DirectionToggle, StepGraph, useDirection } from "./StepGraph";
 import { RUNNABLE_KINDS, type Draft, type Question, type Step, type StepKind } from "../studio/draft";
-import { KINDS, addStepAfter, deleteStep, graphOf, label, prefillBranches, setStart } from "../studio/edit";
+import { KINDS, addStepAfter, addStepOnBranch, deleteStep, graphOf, label, prefillBranches, setStart } from "../studio/edit";
 import { lint, type Issue, type Tier } from "../studio/lint";
 import { loadDraft, saveDraft } from "../studio/storage";
 
@@ -69,6 +69,11 @@ export function Studio() {
     setDraft(r.draft);
     setSelected(r.id);
   };
+  const addOnBranch = (router: string, index: number, kind: StepKind) => {
+    const r = addStepOnBranch(draft, router, index, kind);
+    setDraft(r.draft);
+    setSelected(r.id);
+  };
 
   return (
     <div className="studio" data-testid="studio">
@@ -103,7 +108,8 @@ export function Studio() {
                 onAdd={(k) => add(step.id, k)}
                 onDelete={() => { setDraft(deleteStep(draft, step.id)); setSelected(null); }}
                 onStart={() => setDraft(setStart(draft, step.id))}
-                onPrefill={() => setDraft(prefillBranches(draft, step.id))} />
+                onPrefill={() => setDraft(prefillBranches(draft, step.id))}
+                onAddOnBranch={(i, k) => addOnBranch(step.id, i, k)} />
             : <ProcedurePanel draft={draft} edit={edit} />}
         </aside>
       </div>
@@ -237,9 +243,10 @@ interface StepPanelProps {
   onDelete: () => void;
   onStart: () => void;
   onPrefill: () => void;
+  onAddOnBranch: (index: number, kind: StepKind) => void;
 }
 
-function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill }: StepPanelProps) {
+function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill, onAddOnBranch }: StepPanelProps) {
   const at = (d: Draft) => d.steps.find((s) => s.id === step.id)!;
   const set = (change: (s: Step) => void) => edit((d) => change(at(d)));
   const others = draft.steps.filter((s) => s.id !== step.id);
@@ -255,7 +262,7 @@ function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill }: S
   return (
     <div data-testid="step-panel" data-step={step.id}>
       <h2>{label(step)} <span className="kind-tag" style={{ ["--kind" as string]: `var(--${step.kind})` }}>{step.kind}</span></h2>
-      {step.kind !== "end" && (
+      {step.kind !== "end" && step.kind !== "router" && (
         <>
           <strong className="small">Add a step after this one</strong>
           <AddKinds label={`Add step after ${label(step)}`} kinds={KINDS} onAdd={onAdd} />
@@ -271,7 +278,7 @@ function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill }: S
         </Field>
       )}
 
-      {step.kind === "router" && <RouterFields step={step} set={set} target={target} onPrefill={onPrefill} />}
+      {step.kind === "router" && <RouterFields step={step} set={set} target={target} onPrefill={onPrefill} onAddOnBranch={onAddOnBranch} />}
       {step.kind === "decision" && <DecisionFields step={step} set={set} />}
       {step.kind === "execution" && (
         <>
@@ -321,8 +328,8 @@ function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill }: S
   );
 }
 
-function RouterFields({ step, set, target, onPrefill }: {
-  step: Step; set: (c: (s: Step) => void) => void; onPrefill: () => void;
+function RouterFields({ step, set, target, onPrefill, onAddOnBranch }: {
+  step: Step; set: (c: (s: Step) => void) => void; onPrefill: () => void; onAddOnBranch: (index: number, kind: StepKind) => void;
   target: (value: string | undefined, onChange: (v: string | undefined) => void, field?: string, aria?: string) => ReactNode;
 }) {
   const branches = step.branches ?? [];
@@ -338,6 +345,9 @@ function RouterFields({ step, set, target, onPrefill }: {
               onChange={(e) => set((s) => { s.branches![i].value = e.target.value; })} />
             {target(b.target, (v) => set((s) => { s.branches![i].target = v; }), undefined, `branch ${i + 1} target`)}
             <button onClick={() => set((s) => { s.branches!.splice(i, 1); })} aria-label={`remove branch ${i + 1}`}>remove</button>
+            <div className="add-kinds" role="group" aria-label={`New step on branch ${i + 1}`}>
+              {KINDS.map((k) => <button key={k} onClick={() => onAddOnBranch(i, k)}>+ {k}</button>)}
+            </div>
           </div>
         ))}
         <div className="actions">
