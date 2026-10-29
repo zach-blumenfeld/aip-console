@@ -74,7 +74,7 @@ the first step is the start and must be runnable. The editor offers "next step" 
 
 ## - [x] S0: Draft model and the linter
 
-Done 2026-10-29, commit e074054: Draft model, SKILL.md round-trip and a TS port of aip-spec's frontmatter, schema, graph and state rules (three tiers); 38 parity fixtures agree with `aip-spec validate`. The runtime block is `runtime-0.6a1.ts` (a string export, not a `.md` import) so Playwright's Node loader can import it.
+Done 2026-10-29, commit 9170e35: Draft model, SKILL.md round-trip and a TS port of aip-spec's frontmatter, schema, graph and state rules (three tiers); 38 parity fixtures agree with `aip-spec validate`. The runtime block is `runtime-0.6a1.ts` (a string export, not a `.md` import) so Playwright's Node loader can import it.
 
 No UI. Pure TypeScript under `src/studio/`, unit-tested with Node's test runner or a Playwright
 `test` without a browser (follow whatever `e2e/` already does; add `vitest` only if neither fits).
