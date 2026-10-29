@@ -66,6 +66,11 @@ ul.criteria { margin: 0.25rem 0 0; padding-left: 1.2rem; }
 .step-graph .data-label { font-size: 11px; fill: var(--data); paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
 .step-graph .input-node rect { fill: var(--fill); stroke: var(--data); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .flow-toggle { display: inline-flex; gap: 0.75rem; font-size: 0.9rem; }
+.graph-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1.5rem; }
+.graph-controls > p { margin: 0; }
+.direction-toggle { font-size: 0.9rem; margin-left: auto; white-space: nowrap; }
+/* A left-to-right graph takes the whole row of its grid, so it has the width to stay legible. */
+.procedure-grid > .wide, .run-grid > .wide { grid-column: 1 / -1; }
 
 /* Run traffic: edges in the accent, thick with use; an edge no run took stays a hairline. */
 .step-graph.traffic-mode .edge { color: color-mix(in srgb, currentColor 28%, transparent); }

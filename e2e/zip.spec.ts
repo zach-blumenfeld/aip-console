@@ -3,7 +3,7 @@ import { strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { aipJson, SECOND_REVISION_DIR, SERVER } from "./aip";
+import { aipJson, FIRST_REVISION_DIR, SECOND_REVISION_DIR, SERVER } from "./aip";
 
 // Skill zips: a revision downloads as `<name>@<rev>.zip` holding `<name>/<path>` for every file of its
 // manifest, and a zip of a skill folder publishes through the catalog page, where the server names the skill
@@ -153,6 +153,141 @@ test("run traffic weights the graph's edges by the runs that took them", async (
   // The other two modes are untouched by it.
   await page.getByLabel("control flow").check();
   await expect(graph.locator('[data-testid="edge-runs"]')).toHaveCount(0);
+
+  // Both runs were on the latest revision. The one before shares its start and end, but its traffic is its own:
+  // nothing, with the two runs named as left out.
+  const revisions = page.getByRole("combobox", { name: "revision" });
+  const older = (await revisions.locator("option").nth(1).getAttribute("value"))!;
+  await revisions.selectOption(older);
+  await expect(page).toHaveURL(new RegExp(`#/p/${NAME}(%40|@)${older}$`));
+  await page.getByLabel("run traffic").check();
+  await expect(summary).toHaveAttribute("data-runs", "0");
+  await expect(summary).toContainText("2 runs of this name on other revisions are not counted");
+  await expect(graph.locator('[data-testid="step-node"][data-step="end"] [data-testid="step-runs"]')).toHaveAttribute("data-runs", "0");
+});
+
+// billing-support's first revision with a policy check after the reply and a rewrite that loops back to it.
+const LOOP = "zip-loop";
+const LOOP_STEPS = `
+  - name: check
+    kind: decision
+    description: Does the latest reply follow the refund policy?
+    inputs:
+      - name: message
+        type: string
+    history: true
+    questions:
+      ok:
+        type: noul
+        instructions: Does the latest reply in the run follow the refund policy?
+    inputs_to: by-check
+
+  - name: by-check
+    kind: router
+    description: A passing reply ends the run; otherwise rewrite it.
+    branch_on: ok
+    branches:
+      "true": end
+      "false": rewrite
+
+  - name: rewrite
+    kind: client_task
+    description: Rewrite the reply so it follows the policy; the check runs again on the result.
+    inputs:
+      - name: message
+        type: string
+      - name: reply
+        type: string
+    template: assets/reply.md
+    assets:
+      - assets/policy.md
+    outputs:
+      - name: revised_reply
+        type: string
+        description: The rewritten reply.
+    inputs_to: check
+`;
+const looped = (p: string, text: string) => {
+  if (p !== "SKILL.md") return text;
+  const tail = "        description: The drafted reply to send the customer.\n    inputs_to: end\n";
+  expect(text).toContain(tail);
+  return text.replace(/^name: billing-support$/m, `name: ${LOOP}`).replace(tail, tail.replace("inputs_to: end", "inputs_to: check") + LOOP_STEPS);
+};
+
+// The e2e tsconfig has no DOM types: what the page-side reader touches of an element.
+interface El { getAttribute(name: string): string | null; querySelector(s: string): El | null; querySelectorAll(s: string): ArrayLike<El>; dataset: Record<string, string | undefined> }
+
+/** Read in the page: every control edge's points against the drawing box and the other steps' boxes. */
+const geometry = (svg: El) => {
+  const [vx, vy, vw, vh] = svg.getAttribute("viewBox")!.split(" ").map(Number);
+  const nodes = Array.from(svg.querySelectorAll('[data-testid="step-node"]')).map((n) => {
+    const m = /translate\(([-\d.]+), ([-\d.]+)\)/.exec(n.getAttribute("transform")!)!;
+    return { id: n.dataset.step!, x: Number(m[1]), y: Number(m[2]) };
+  });
+  const outside = new Set<string>(), through = new Set<string>();
+  for (const e of Array.from(svg.querySelectorAll('[data-testid="step-edge"]'))) {
+    const key = `${e.dataset.from}->${e.dataset.to}`;
+    const pts = e.querySelector("path")!.getAttribute("d")!.match(/[-\d.]+ [-\d.]+/g)!.map((s: string) => s.split(" ").map(Number));
+    for (const [x, y] of pts) if (x < vx || y < vy || x > vx + vw || y > vy + vh) outside.add(key);
+    for (let i = 1; i < pts.length; i++) {
+      for (let t = 0.01; t < 1; t += 0.01) {
+        const x = pts[i - 1][0] + t * (pts[i][0] - pts[i - 1][0]), y = pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1]);
+        for (const n of nodes) {
+          if (n.id === e.dataset.from || n.id === e.dataset.to) continue;
+          if (x > n.x + 1 && x < n.x + 149 && y > n.y + 1 && y < n.y + 47) through.add(`${key} through ${n.id}`);
+        }
+      }
+    }
+  }
+  const at = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  return { outside: [...outside], through: [...through], at };
+};
+
+test("a loop runs on a rail outside the steps, and the graph draws left to right on request", async ({ page }) => {
+  await page.goto("./");
+  await upload(page, zipOf(FIRST_REVISION_DIR, LOOP, looped), "loop.zip");
+  await expect(page.getByTestId("published-note")).toHaveAttribute("data-existed", "false");
+  const graph = page.getByRole("img", { name: "step graph" });
+  await expect(graph.locator('[data-testid="step-edge"][data-from="rewrite"][data-to="check"]')).toHaveCount(1);
+  const clean = async () => {
+    const g = await graph.evaluate(geometry);
+    expect(g.outside).toEqual([]);
+    expect(g.through).toEqual([]);
+    return g.at;
+  };
+
+  // Top-down: layers go down the page, and the loop's rail stays inside the drawing and clear of every step.
+  await expect(graph).toHaveAttribute("data-direction", "down");
+  let at = await clean();
+  expect(at.triage.y).toBeLessThan(at["by-tone"].y);
+  expect(at.rewrite.y).toBeGreaterThan(at.check.y);
+
+  // Left to right: the same layers go across; every mode keeps its edges clear.
+  await page.getByLabel("left to right").check();
+  await expect(graph).toHaveAttribute("data-direction", "right");
+  at = await clean();
+  expect(at.triage.x).toBeLessThan(at["by-tone"].x);
+  expect(at["by-tone"].x).toBeLessThan(at.reply.x);
+  expect(at.rewrite.x).toBeGreaterThan(at.check.x);
+  await page.getByLabel("data flow").check();
+  await expect(graph.getByTestId("input-node")).toHaveCount(1);
+  await clean();
+  await page.getByLabel("run traffic").check();
+  await expect(page.getByTestId("traffic-summary")).toHaveAttribute("data-runs", "0");
+  await clean();
+
+  // The choice is remembered: after a reload, and on the run page, which offers the same toggle.
+  await page.reload();
+  await expect(graph).toHaveAttribute("data-direction", "right");
+  const runs = await (await fetch(`${SERVER}/runs?name=${NAME}&limit=1`)).json() as { run_id: string }[] | { runs: { run_id: string }[] };
+  const run = (Array.isArray(runs) ? runs : runs.runs)[0];
+  await page.goto(`./#/runs/${run.run_id}`);
+  await expect(graph).toHaveAttribute("data-direction", "right");
+  await clean();
+  await page.getByLabel("left to right").uncheck();
+  await expect(graph).toHaveAttribute("data-direction", "down");
+  await page.reload();
+  await expect(graph).toHaveAttribute("data-direction", "down");
 });
 
 test("a name whose every revision is retired is hidden from the catalog unless asked for, and cannot be run", async ({ page, request }) => {

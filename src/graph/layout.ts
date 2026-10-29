@@ -1,7 +1,10 @@
 // A small layered (Sugiyama-style) layout for step graphs. Procedures have a
 // handful of steps, so a hand-rolled longest-path layering with one barycenter
 // ordering pass draws them cleanly without a layout library. An edge that skips
-// layers is routed through dummy nodes, so it bends around the steps between.
+// layers is routed through dummy nodes, so it bends around the steps between; a
+// back edge (a loop) runs along a rail outside the steps it spans. The layout is
+// computed along two abstract axes, rank (layer to layer) and order (across a
+// layer), and mapped to the page at the end: top-down or left-to-right.
 
 export interface GraphNode { id: string }
 export interface GraphEdge { from: string; to: string; label?: string }
@@ -10,6 +13,8 @@ export interface PlacedNode extends GraphNode { x: number; y: number; layer: num
 export interface PlacedEdge extends GraphEdge { points: [number, number][]; back: boolean }
 export interface Layout { nodes: PlacedNode[]; edges: PlacedEdge[]; width: number; height: number }
 
+export type Direction = "down" | "right";
+
 export interface LayoutOptions {
   nodeWidth: number;
   nodeHeight: number;
@@ -17,13 +22,19 @@ export interface LayoutOptions {
   nodeGap: number;
   /** The slot an edge that skips a layer takes in each layer it crosses. */
   dummyWidth: number;
+  /** How far outside the steps a loop's rail runs, and the step between two rails on one side. */
+  railGap: number;
   start?: string;
+  direction: Direction;
 }
 
-const DEFAULTS: LayoutOptions = { nodeWidth: 150, nodeHeight: 48, layerGap: 70, nodeGap: 36, dummyWidth: 16 };
+const DEFAULTS: LayoutOptions = { nodeWidth: 150, nodeHeight: 48, layerGap: 70, nodeGap: 36, dummyWidth: 16, railGap: 18, direction: "down" };
 
 export function layout(nodes: GraphNode[], edges: GraphEdge[], opts: Partial<LayoutOptions> = {}): Layout {
   const o = { ...DEFAULTS, ...opts };
+  // A node's extent along each axis: down, a layer is a row and a node is nodeWidth across it.
+  const sizeO = o.direction === "down" ? o.nodeWidth : o.nodeHeight;
+  const sizeR = o.direction === "down" ? o.nodeHeight : o.nodeWidth;
   const ids = nodes.map((n) => n.id);
   const out = new Map<string, string[]>(ids.map((id) => [id, []]));
   for (const e of edges) if (out.has(e.from) && out.has(e.to)) out.get(e.from)!.push(e.to);
@@ -62,7 +73,7 @@ export function layout(nodes: GraphNode[], edges: GraphEdge[], opts: Partial<Lay
 
   // An edge that skips layers gets a slim dummy node in each layer it crosses, so it is ordered and placed
   // like a node and never drawn through one; the drawn edge bends at each dummy.
-  const widthOf = new Map<string, number>(ids.map((id) => [id, o.nodeWidth]));
+  const sizeOf = new Map<string, number>(ids.map((id) => [id, sizeO]));
   const chains = new Map<string, string[]>();     // `from->to` of a long edge -> its dummies, top to bottom
   for (const e of edges) {
     const key = `${e.from}->${e.to}`;
@@ -75,7 +86,7 @@ export function layout(nodes: GraphNode[], edges: GraphEdge[], opts: Partial<Lay
       const id = `\u0000${key}#${k}`;
       dummies.push(id);
       layerOf.set(id, layerOf.get(e.from)! + k);
-      widthOf.set(id, o.dummyWidth);
+      sizeOf.set(id, o.dummyWidth);
       forwardIn.set(id, [previous]);
       previous = id;
     }
@@ -100,41 +111,63 @@ export function layout(nodes: GraphNode[], edges: GraphEdge[], opts: Partial<Lay
     layer.forEach((id, j) => pos.set(id, j));
   });
 
-  const rowWidth = (layer: string[]) => layer.reduce((w, id) => w + widthOf.get(id)!, 0) + (layer.length - 1) * o.nodeGap;
-  const width = Math.max(...layers.map(rowWidth));
-  const placed = new Map<string, PlacedNode>();
+  // Placement in (order, rank) coordinates: each layer centred across the widest.
+  const rowWidth = (layer: string[]) => layer.reduce((w, id) => w + sizeOf.get(id)!, 0) + (layer.length - 1) * o.nodeGap;
+  const extentO = Math.max(...layers.map(rowWidth));
+  const placed = new Map<string, { o: number; r: number; layer: number }>();
   layers.forEach((layer, i) => {
-    let x = (width - rowWidth(layer)) / 2;
+    let at = (extentO - rowWidth(layer)) / 2;
     for (const id of layer) {
-      placed.set(id, { id, layer: i, x, y: i * (o.nodeHeight + o.layerGap) });
-      x += widthOf.get(id)! + o.nodeGap;
+      placed.set(id, { o: at, r: i * (sizeR + o.layerGap), layer: i });
+      at += sizeOf.get(id)! + o.nodeGap;
     }
   });
-  const height = layers.length * o.nodeHeight + (layers.length - 1) * o.layerGap;
-  const centre = (id: string) => placed.get(id)!.x + widthOf.get(id)! / 2;
+  const centre = (id: string) => placed.get(id)!.o + sizeOf.get(id)! / 2;
 
-  const placedEdges: PlacedEdge[] = edges
+  // A loop's rail runs just outside every node and dummy in the layers it spans, on whichever side is nearer
+  // to both ends; rails on one side are staggered.
+  const lanes = { low: 0, high: 0 };
+  const abstractEdges = edges
     .filter((e) => placed.has(e.from) && placed.has(e.to))
     .map((e) => {
       const a = placed.get(e.from)!, b = placed.get(e.to)!;
       const key = `${e.from}->${e.to}`;
       const isBack = back.has(key);
-      const ax = centre(e.from), bx = centre(e.to);
+      const ao = centre(e.from), bo = centre(e.to);
       let points: [number, number][];
       if (isBack) {
-        points = [[ax, a.y + o.nodeHeight], [ax, a.y + o.nodeHeight + o.layerGap / 2],
-                  [Math.max(ax, bx) + o.nodeWidth / 2 + 10, a.y + o.nodeHeight + o.layerGap / 2],
-                  [Math.max(ax, bx) + o.nodeWidth / 2 + 10, b.y - o.layerGap / 2], [bx, b.y - o.layerGap / 2], [bx, b.y]];
+        const spanned = layers.slice(Math.min(a.layer, b.layer), Math.max(a.layer, b.layer) + 1).flat();
+        const low = Math.min(...spanned.map((id) => placed.get(id)!.o));
+        const high = Math.max(...spanned.map((id) => placed.get(id)!.o + sizeOf.get(id)!));
+        const nearerLow = (ao - low) + (bo - low) <= (high - ao) + (high - bo);
+        const rail = nearerLow ? low - o.railGap * (1 + lanes.low++) : high + o.railGap * (1 + lanes.high++);
+        const exit = nearerLow ? a.o : a.o + sizeO;
+        const above = b.r - o.layerGap / 2;
+        points = [[exit, a.r + sizeR / 2], [rail, a.r + sizeR / 2], [rail, above], [bo, above], [bo, b.r]];
       } else {
-        points = [[ax, a.y + o.nodeHeight]];
+        points = [[ao, a.r + sizeR]];
         for (const d of chains.get(key) ?? []) {
-          const dy = placed.get(d)!.y, dx = centre(d);
-          points.push([dx, dy], [dx, dy + o.nodeHeight]);
+          const at = placed.get(d)!;
+          points.push([centre(d), at.r], [centre(d), at.r + sizeR]);
         }
-        points.push([bx, b.y]);
+        points.push([bo, b.r]);
       }
       return { ...e, points, back: isBack };
     });
 
-  return { nodes: ids.map((id) => placed.get(id)!), edges: placedEdges, width, height };
+  // The box holds every node and every edge point (rails and loops reach outside the layers).
+  let minO = 0, maxO = extentO, minR = 0, maxR = layers.length * sizeR + (layers.length - 1) * o.layerGap;
+  for (const e of abstractEdges) for (const [po, pr] of e.points) {
+    minO = Math.min(minO, po); maxO = Math.max(maxO, po); minR = Math.min(minR, pr); maxR = Math.max(maxR, pr);
+  }
+  const map = (po: number, pr: number): [number, number] =>
+    o.direction === "down" ? [po - minO, pr - minR] : [pr - minR, po - minO];
+  const [width, height] = map(maxO, maxR);
+
+  return {
+    nodes: ids.map((id) => { const p = placed.get(id)!; const [x, y] = map(p.o, p.r); return { id, x, y, layer: p.layer }; }),
+    edges: abstractEdges.map((e) => ({ ...e, points: e.points.map(([po, pr]) => map(po, pr)) })),
+    width,
+    height,
+  };
 }

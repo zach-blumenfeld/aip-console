@@ -4,7 +4,7 @@ import type { CatalogEntry, HistoryEntry, ProcedureInfo, RunDetail, RunStatus, R
 import { href, navigate } from "../router";
 import { RunStepCard } from "./RunStepCard";
 import { describe } from "./Source";
-import { StepGraph } from "./StepGraph";
+import { DirectionToggle, StepGraph, useDirection } from "./StepGraph";
 
 const STATUSES: RunStatus[] = ["running", "paused", "done", "failed"];
 
@@ -81,6 +81,7 @@ export function RunPage({ id }: { id: string }) {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [info, setInfo] = useState<ProcedureInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [direction, setDirection] = useDirection();
 
   useEffect(() => {
     setRun(null);
@@ -151,11 +152,14 @@ export function RunPage({ id }: { id: string }) {
           )}
         </div>
 
-        <aside>
+        <aside className={direction === "right" ? "wide" : undefined}>
           <h2>Trace</h2>
-          <p className="muted small">Visited steps and the edges taken are highlighted.</p>
+          <div className="graph-controls">
+            <p className="muted small">Visited steps and the edges taken are highlighted.</p>
+            <DirectionToggle direction={direction} onChange={setDirection} />
+          </div>
           <StepGraph steps={info.step_details} edges={info.edges} branches={info.branches}
-                     start={info.start.step} end={info.end.step} visited={trace.visited} taken={trace.taken} />
+                     start={info.start.step} end={info.end.step} visited={trace.visited} taken={trace.taken} direction={direction} />
           <ol className="trace small" data-testid="trace">
             {run.history.map((h, i) => <li key={i}><code>{h.step}</code> <span className="muted">{h.kind}</span></li>)}
           </ol>
