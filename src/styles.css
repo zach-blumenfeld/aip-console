@@ -240,8 +240,11 @@ tr[data-retired] td { opacity: 0.6; }
 .studio-panel .danger { color: #b00020; }
 .studio-lint { margin: 0.75rem 0; }
 .studio-lint h3 { margin: 0.5rem 0 0.2rem; }
-.studio-lint ul { margin: 0.2rem 0; padding-left: 1.2rem; font-size: 0.9rem; }
-.studio-lint li button { text-align: left; }
+.studio-lint ul { margin: 0.2rem 0; padding-left: 1.2rem; font-size: 0.9rem; line-height: 1.45; }
+.studio-lint li { margin: 0.45rem 0; }
+/* A multi-line button takes its baseline from its last line, which would drop the bullet there; top-aligned,
+   the bullet stays on the first line of the item. */
+.studio-lint li button, .studio-lint li select { text-align: left; vertical-align: top; line-height: inherit; }
 .studio-lint .tier-error h3 { color: #b00020; }
 .studio-lint .tier-unfinished h3 { color: var(--router); }
 .studio-lint .tier-warning h3 { color: var(--data); }
