@@ -159,7 +159,9 @@ Proof: e2e builds the `billing-support` graph by hand in the UI (a decision, a r
 branches, an execution, a client task, an end), reloads the page, and asserts the draft is still
 there and the lint panel shows no errors in the wired part.
 
-## - [ ] S2: I/O editing with key pickers and type checks
+## - [x] S2: I/O editing with key pickers and type checks
+
+Done 2026-10-30, commit 50ec0cf: an I/O editor on every step with the key picker (`availableKeys`, exported from `lint.ts`, shares the must-availability fixed point), read-only decision outputs, a `branch_on` picker showing possible values, a data-flow toggle, and two quick fixes on `unproduced_input` (now reported once per key). Router branch rows also gained a per-row "new step" control (67757ed).
 
 - Inputs and outputs editor for every step: rows of `name`, `type` (the six `DataType`s),
   `description`. The **start** step's inputs are labelled "what the client supplies".
