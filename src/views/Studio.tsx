@@ -415,9 +415,9 @@ function RouterFields({ draft, step, available, set, target, onPrefill, onAddOnB
 
 /** What a threshold does depends on the question: aip-spec's description of `thresholds`. */
 const THRESHOLD_HELP: Record<Question["type"], string> = {
-  noul: "Flag the answer for review when the probability of true is within this margin of 0.5: 0.1 flags answers between 0.4 and 0.6, and a higher value flags more. The client makes the final call on flagged answers.",
-  choice: "Flag the answer for review when the model's confidence in the label it chose is below this value: 0.8 flags anything under 80% confidence, and a higher value flags more. The client makes the final call on flagged answers.",
-  score: "Flag the answer for review when the model's confidence in the level it chose is below this value: 0.8 flags anything under 80% confidence, and a higher value flags more. The client makes the final call on flagged answers.",
+  noul: "Flag the answer for review by the agent calling the procedure when the probability of true is within this margin of 0.5: 0.1 flags answers between 0.4 and 0.6, and a higher value flags more. The calling agent makes the final call on flagged answers.",
+  choice: "Flag the answer for review by the agent calling the procedure when the model's confidence in the label it chose is below this value: 0.8 flags anything under 80% confidence, and a higher value flags more. The calling agent makes the final call on flagged answers.",
+  score: "Flag the answer for review by the agent calling the procedure when the model's confidence in the level it chose is below this value: 0.8 flags anything under 80% confidence, and a higher value flags more. The calling agent makes the final call on flagged answers.",
 };
 
 /** A number field that keeps what is typed, so `0.` survives on the way to `0.5`, and hands over a number only when
