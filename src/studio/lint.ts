@@ -17,6 +17,8 @@ export interface Issue {
   stepId?: string;
   /** The Draft field the issue is about, as a path inside the step (`inputs[1].type`) or the Draft (`purpose`). */
   field?: string;
+  /** The state key the issue is about, where one is: what a quick fix declares. */
+  key?: string;
 }
 
 export interface LintOptions {
@@ -47,10 +49,10 @@ interface R {
 
 export function lint(draft: Draft, options: LintOptions = {}): Issue[] {
   const issues: Issue[] = [];
-  const add = (tier: Tier, code: string, message: string, step?: Step, field?: string) => {
-    issues.push({ tier, code, message, ...(step && { stepId: step.id }), ...(field && { field }) });
+  const add = (tier: Tier, code: string, message: string, step?: Step, field?: string, key?: string) => {
+    issues.push({ tier, code, message, ...(step && { stepId: step.id }), ...(field && { field }), ...(key !== undefined && { key }) });
   };
-  const err = (code: string, message: string, step?: Step, field?: string) => add("error", code, message, step, field);
+  const err = (code: string, message: string, step?: Step, field?: string, key?: string) => add("error", code, message, step, field, key);
 
   frontmatter(draft, err);
   schema(draft, err);
@@ -61,7 +63,7 @@ export function lint(draft: Draft, options: LintOptions = {}): Issue[] {
 
 // ------------------------------------------------------------------------------------------ frontmatter
 
-type Err = (code: string, message: string, step?: Step, field?: string) => void;
+type Err = (code: string, message: string, step?: Step, field?: string, key?: string) => void;
 
 function frontmatter(d: Draft, err: Err): void {
   if (!d.name) err("missing_required_frontmatter", "`name` is required", undefined, "name");
@@ -303,13 +305,7 @@ function state(steps: R[], byName: Map<string, R>, err: Err): void {
   }
 
   // Rule 4: a consumer declares the type its producer declares. One key, one type, end to end.
-  const producedType = new Map<string, [string, string]>();
-  const setDefault = (key: string, value: [string, string]) => { if (!producedType.has(key)) producedType.set(key, value); };
-  if (start.s.kind !== "router") for (const item of start.s.inputs) setDefault(item.name, [item.type, `start input on \`${start.name}\``]);
-  for (const r of steps) {
-    if (r.s.kind === "decision") for (const q of r.s.questions ?? []) setDefault(q.name, [QUESTION_TYPES[q.type] ?? q.type, `a ${q.type} question in \`${r.name}\``]);
-    for (const item of r.s.outputs ?? []) setDefault(item.name, [item.type, `output of \`${r.name}\``]);
-  }
+  const producedType = typeTable(steps);
   for (const r of steps) {
     if (r.s.kind === "router") continue;
     r.s.inputs.forEach((item, j) => {
@@ -322,6 +318,33 @@ function state(steps: R[], byName: Map<string, R>, err: Err): void {
   }
 
   // Rule 1: keys available on every path (must-availability over the graph, cycles included).
+  const available = mustAvailable(steps, byName, startInputs);
+  for (const r of steps) {
+    const have = available.get(r.name);
+    if (have == null) continue;                    // unreachable; reported elsewhere
+    for (const k of unique(consumed(r)).filter((k) => !have.has(k))) {
+      err("unproduced_input", `step \`${r.name}\` consumes \`${k}\`, which no step produces on every path to it; declare it on the start step \`${start.name}\` if the client supplies it, or as an \`output\` of an upstream step`, r.s, r.s.kind === "router" ? "branchOn" : "inputs", k);
+    }
+  }
+}
+
+/** Each key's type and where it comes from, first declaration winning: start inputs, then each step in order. */
+function typeTable(steps: R[]): Map<string, [string, string]> {
+  const start = steps[0];
+  const table = new Map<string, [string, string]>();
+  const setDefault = (key: string, value: [string, string]) => { if (!table.has(key)) table.set(key, value); };
+  if (start.s.kind !== "router") for (const item of start.s.inputs) setDefault(item.name, [item.type, `start input on \`${start.name}\``]);
+  for (const r of steps) {
+    if (r.s.kind === "decision") for (const q of r.s.questions ?? []) setDefault(q.name, [QUESTION_TYPES[q.type] ?? q.type, `a ${q.type} question in \`${r.name}\``]);
+    for (const item of r.s.outputs ?? []) setDefault(item.name, [item.type, `output of \`${r.name}\``]);
+  }
+  return table;
+}
+
+/** The keys in the state when each step starts, on every path to it (null: no path from the start found). A
+ *  fixed point over the graph, so a loop is handled. */
+function mustAvailable(steps: R[], byName: Map<string, R>, startInputs: Set<string>): Map<string, Set<string> | null> {
+  const start = steps[0];
   const available = new Map<string, Set<string> | null>(steps.map((r) => [r.name, null]));
   available.set(start.name, new Set(startInputs));
   const preds = new Map<string, R[]>();
@@ -343,14 +366,28 @@ function state(steps: R[], byName: Map<string, R>, err: Err): void {
       }
     }
   }
+  return available;
+}
+
+export interface AvailableKey { name: string; type: string }
+
+/** For each step id, the keys it may declare as inputs: the start inputs and everything produced on every path to
+ *  it, with their types. The same computation `unproduced_input` is judged by, so a pick from this list never
+ *  raises it. A step nothing reaches has none. */
+export function availableKeys(draft: Draft): Map<string, AvailableKey[]> {
+  const out = new Map<string, AvailableKey[]>();
+  if (draft.steps.length === 0) return out;
+  const steps = resolve(draft);
+  const byName = new Map<string, R>();
+  for (const r of steps) if (!byName.has(r.name)) byName.set(r.name, r);
+  const start = steps[0];
+  const available = mustAvailable(steps, byName, new Set(start.s.kind !== "router" ? consumed(start) : []));
+  const types = typeTable(steps);
   for (const r of steps) {
-    const have = available.get(r.name);
-    if (have == null) continue;                    // unreachable; reported elsewhere
-    const missing = unique(consumed(r)).filter((k) => !have.has(k));
-    if (missing.length) {
-      err("unproduced_input", `step \`${r.name}\` consumes ${missing.map((k) => `\`${k}\``).join(", ")}, which no step produces on every path to it; declare them on the start step \`${start.name}\` if the client supplies them, or as \`outputs\` of an upstream step`, r.s, r.s.kind === "router" ? "branchOn" : "inputs");
-    }
+    const have = byName.get(r.name) === r ? available.get(r.name) : null;
+    out.set(r.s.id, have ? [...have].map((name) => ({ name, type: types.get(name)?.[0] ?? "string" })) : []);
   }
+  return out;
 }
 
 /** A procedure with execution steps declares the environment its scripts need, and launches each script with the

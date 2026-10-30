@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 import { emptyDraft, type Draft, type Step } from "../src/studio/draft";
-import { lint, PLACEHOLDER_MARKER } from "../src/studio/lint";
+import { availableKeys, lint, PLACEHOLDER_MARKER } from "../src/studio/lint";
 import { RUNTIME_BLOCK } from "../src/studio/runtime-0.6a1";
 import { draftToSkillMd, skillMdToDraft } from "../src/studio/serialize";
 import { FIRST_REVISION_DIR } from "./aip";
@@ -103,4 +103,16 @@ test("the graph rules name the step", () => {
   const issues = lint(draft);
   expect(issues.find((i) => i.code === "unknown_step_reference")).toMatchObject({ tier: "error", stepId: step(draft, "reply").id, field: "next" });
   expect(codes(draft, "error")).toContain("no_path_to_end");
+});
+
+test("availableKeys offers only the keys on every path to a step", () => {
+  const d = skillMdToDraft(billing());
+  const at = (name: string) => availableKeys(d).get(step(d, name).id)!.map((k) => k.name);
+  // escalate and reply each produce a key, but only one of them runs, so neither is certain at the end
+  expect(at("escalate")).toEqual(expect.arrayContaining(["tone"]));
+  expect(at("end")).not.toContain("ticket_id");
+  expect(at("end")).not.toContain("reply");
+  expect(at("end")).toEqual(expect.arrayContaining(["tone"]));
+  // and the type is the one the key is declared with
+  expect(availableKeys(d).get(step(d, "by-tone").id)!.find((k) => k.name === "tone")?.type).toBe("string");
 });

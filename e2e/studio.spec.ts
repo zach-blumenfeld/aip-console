@@ -36,9 +36,12 @@ test("build billing-support by hand, reload, and the draft and its wiring are ke
   // by-tone: spliced after triage, its rows filled from the question's labels
   await addAfter(page, "triage", "router");
   await rename(page, "by-tone");
-  await expect(field(page, "branch_on")).toHaveValue("tone");
+  await expect(field(page, "branchOn")).toHaveValue("tone");
   await expect(panel(page).getByLabel("branch 1 value")).toHaveValue("angry");
   await expect(panel(page).getByLabel("branch 2 value")).toHaveValue("calm");
+  // the key is chosen from what reaches the router, and the question's answers are shown
+  await expect(field(page, "branchOn").locator("option")).toHaveText(["(choose a key)", "tone (string)"]);
+  await expect(panel(page).getByTestId("possible-values")).toHaveText("possible values: angry, calm");
 
   // a step is made from the branch row it belongs to
   await onBranch(page, 1, "execution");
@@ -107,4 +110,81 @@ test("deleting a middle step re-links its neighbours; a step with no name still 
   await field(page, "name").fill("");
   await expect(page.getByTestId("lint-panel").locator('li[data-code="schema_violation"]').first()).toBeVisible();
   await expect(page.getByTestId("step-node")).toHaveCount(2);
+});
+
+// ------------------------------------------------------------------------------------------------ S2: inputs and outputs
+
+/** fetch (execution, one integer output `ticket`) -> end, with `ticket` taken as an input of the end step. */
+async function chain(page: Page) {
+  await page.goto("./#/studio");
+  await page.getByRole("group", { name: "Add the first step" }).getByRole("button", { name: "+ execution" }).click();
+  await rename(page, "fetch");
+  await expect(panel(page).getByTestId("io-inputs").getByText("inputs: what the client supplies")).toBeVisible();
+  await panel(page).getByRole("button", { name: "add new output" }).click();
+  await panel(page).getByLabel("outputs 1 name").fill("ticket");
+  await panel(page).getByLabel("outputs 1 type").selectOption("integer");
+  await addAfter(page, "fetch", "end");
+  // the end step offers the key, with its type, and the pick fills both
+  await expect(panel(page).getByLabel("add inputs from the state").locator("option")).toHaveText(["add a key from the state…", "ticket (integer)"]);
+  await panel(page).getByLabel("add inputs from the state").selectOption({ label: "ticket (integer)" });
+  await expect(panel(page).getByLabel("inputs 1 name")).toHaveValue("ticket");
+  await expect(panel(page).getByLabel("inputs 1 type")).toHaveValue("integer");
+}
+
+const unproduced = (page: Page) => page.getByTestId("lint-panel").locator('li[data-code="unproduced_input"]');
+
+test("a key picked from the state is never unproduced; renaming its producer's output is, and a quick fix clears it", async ({ page }) => {
+  await chain(page);
+  const lintPanel = page.getByTestId("lint-panel");
+  await expect(unproduced(page)).toHaveCount(0);
+  await expect(lintPanel.locator('li[data-code="type_mismatch"]')).toHaveCount(0);
+
+  await node(page, "fetch").click();
+  await panel(page).getByLabel("outputs 1 name").fill("ticket_id");
+  await expect(unproduced(page)).toHaveCount(1);
+  await expect(unproduced(page)).toHaveAttribute("data-step", await idOf(page, "end"));
+  await expect(unproduced(page)).toContainText("`ticket`");
+
+  // the fix: the client supplies it, as an input of the start step
+  await unproduced(page).getByRole("button", { name: "declare ticket as a start input" }).click();
+  await expect(unproduced(page)).toHaveCount(0);
+  await node(page, "fetch").click();
+  await expect(panel(page).getByLabel("inputs 1 name")).toHaveValue("ticket");
+  await expect(panel(page).getByLabel("inputs 1 type")).toHaveValue("integer");
+});
+
+test("the other quick fix makes the key an output of a step", async ({ page }) => {
+  await chain(page);
+  await node(page, "fetch").click();
+  await panel(page).getByLabel("outputs 1 name").fill("ticket_id");
+  await expect(unproduced(page)).toHaveCount(1);
+  await unproduced(page).getByLabel("make ticket an output of").selectOption({ label: "fetch" });
+  await expect(unproduced(page)).toHaveCount(0);
+  await node(page, "fetch").click();
+  await expect(panel(page).getByLabel("outputs 2 name")).toHaveValue("ticket");
+  // the declared type came from the consumer, so nothing disagrees
+  await expect(page.getByTestId("lint-panel").locator('li[data-code="type_mismatch"]')).toHaveCount(0);
+});
+
+test("a decision's outputs are read-only, one key per question, and the data view draws the flow", async ({ page }) => {
+  await page.goto("./#/studio");
+  await page.getByRole("group", { name: "Add the first step" }).getByRole("button", { name: "+ decision" }).click();
+  await rename(page, "triage");
+  await page.getByRole("group", { name: "Add question" }).getByRole("button", { name: "+ score" }).click();
+  await panel(page).getByTestId("question").locator("input").first().fill("urgency");
+  await expect(panel(page).getByTestId("decision-outputs")).toContainText("urgency: integer");
+  await expect(panel(page).getByTestId("decision-outputs").locator("input")).toHaveCount(0);
+
+  await addAfter(page, "triage", "execution");
+  await rename(page, "act");
+  await panel(page).getByLabel("add inputs from the state").selectOption({ label: "urgency (integer)" });
+
+  await expect(page.getByTestId("data-edge")).toHaveCount(0);
+  await page.getByLabel("data flow").check();
+  const arrow = page.getByTestId("data-edge");
+  await expect(arrow).toHaveCount(1);
+  await expect(arrow).toHaveAttribute("data-keys", "urgency");
+  await expect(arrow).toHaveAttribute("data-from", await idOf(page, "triage"));
+  await expect(arrow).toHaveAttribute("data-to", await idOf(page, "act"));
+  await expect(page.getByTestId("input-node")).toBeVisible();
 });

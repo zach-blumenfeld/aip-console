@@ -3,6 +3,7 @@
 // router's branches), not a list.
 
 import { RUNNABLE_KINDS, newStepId, type Branch, type Draft, type Step, type StepKind } from "./draft";
+import { START_INPUT, groupFlow, type DataEdge } from "../graph/dataflow";
 import type { Edge, Branch as GraphBranch, StepDetail } from "../api/types";
 
 export const KINDS: StepKind[] = ["decision", "execution", "client_task", "router", "end"];
@@ -172,4 +173,60 @@ export function graphOf(d: Draft): { steps: StepDetail[]; edges: Edge[]; branche
     steps, edges, branches, start: d.steps[0]?.id ?? "", end: d.steps.find((s) => s.kind === "end")?.id ?? "",
     labels: new Map(d.steps.map((s) => [s.id, label(s)])),
   };
+}
+
+// ------------------------------------------------------------------------------------------------ data flow
+
+/** The state keys as arrows for StepGraph's data view: one per (producer, consumer) pair, keyed by step id, the
+ *  start input standing for what the client supplies. A key nothing produces has no arrow (the linter says so). */
+export function flowOf(d: Draft): { from: string; to: string; keys: string[] }[] {
+  const producer = new Map<string, string>();
+  const start = d.steps[0];
+  if (start && start.kind !== "router") for (const i of start.inputs) if (i.name) producer.set(i.name, START_INPUT);
+  for (const s of d.steps) {
+    if (s.kind === "decision") for (const q of s.questions ?? []) if (q.name && !producer.has(q.name)) producer.set(q.name, s.id);
+    for (const o of s.outputs ?? []) if (o.name && !producer.has(o.name)) producer.set(o.name, s.id);
+  }
+  const edges: DataEdge[] = [];
+  for (const s of d.steps) {
+    const keys = s.kind === "router" ? (s.branchOn ? [s.branchOn] : []) : s.inputs.map((i) => i.name).filter(Boolean);
+    for (const key of keys) {
+      const from = producer.get(key);
+      if (from !== undefined && !(s === start && from === START_INPUT)) edges.push({ key, from, to: s.id });
+    }
+  }
+  return groupFlow(edges);
+}
+
+/** What a key's value can be, when the question that produces it is a choice, noul or score: the answers a router
+ *  on it can branch over. Undefined for a key anything else produces. */
+export function possibleValues(d: Draft, key: string): string[] | undefined {
+  for (const s of d.steps) {
+    const q = (s.questions ?? []).find((x) => x.name === key);
+    if (!q) continue;
+    if (q.type === "noul") return ["true", "false"];
+    if (q.type === "choice") return q.criteria.map((c) => c.label).filter(Boolean);
+    return q.criteria.map((_, n) => String(n));
+  }
+  return undefined;
+}
+
+// ------------------------------------------------------------------------------------------------ quick fixes
+
+/** Declare a key as something the client supplies: an input of the start step. */
+export function declareStartInput(d: Draft, key: string, type: string): Draft {
+  const out = structuredClone(d);
+  const start = out.steps[0];
+  if (start && start.kind !== "router" && !start.inputs.some((i) => i.name === key)) start.inputs.push({ name: key, type });
+  return out;
+}
+
+/** Declare a key as an output of an execution or client_task step. */
+export function declareOutput(d: Draft, stepId: string, key: string, type: string): Draft {
+  const out = structuredClone(d);
+  const step = out.steps.find((s) => s.id === stepId);
+  if (step && (step.kind === "execution" || step.kind === "client_task") && !(step.outputs ?? []).some((o) => o.name === key)) {
+    (step.outputs ??= []).push({ name: key, type });
+  }
+  return out;
 }

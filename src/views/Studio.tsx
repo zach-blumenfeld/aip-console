@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DirectionToggle, StepGraph, useDirection } from "./StepGraph";
-import { RUNNABLE_KINDS, type Draft, type Question, type Step, type StepKind } from "../studio/draft";
-import { KINDS, addStepAfter, addStepOnBranch, deleteStep, graphOf, label, prefillBranches, setStart } from "../studio/edit";
-import { lint, type Issue, type Tier } from "../studio/lint";
+import { DATA_TYPES, QUESTION_TYPES, RUNNABLE_KINDS, type Draft, type IOItem, type Question, type Step, type StepKind } from "../studio/draft";
+import { KINDS, addStepAfter, addStepOnBranch, declareOutput, declareStartInput, deleteStep, flowOf, graphOf, label, possibleValues, prefillBranches, setStart } from "../studio/edit";
+import { availableKeys, lint, type AvailableKey, type Issue, type Tier } from "../studio/lint";
 import { loadDraft, saveDraft } from "../studio/storage";
 
 const STEP_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -14,6 +14,7 @@ export function Studio() {
   const [draft, setDraft] = useState<Draft>(loadDraft);
   const [selected, setSelected] = useState<string | null>(null);
   const [direction, setDirection] = useDirection();
+  const [showFlow, setShowFlow] = useState(false);
   const [saved, setSaved] = useState<"saved" | "unsaved" | "no-storage">("saved");
   const [focus, setFocus] = useState<string | null>(null);
   const latest = useRef(draft);
@@ -53,6 +54,8 @@ export function Studio() {
     return m;
   }, [issues]);
   const g = useMemo(() => graphOf(draft), [draft]);
+  const available = useMemo(() => availableKeys(draft), [draft]);
+  const flow = useMemo(() => (showFlow ? flowOf(draft) : undefined), [showFlow, draft]);
   const step = draft.steps.find((s) => s.id === selected);
   const select = (id: string | null, field?: string) => { setSelected(id); setFocus(field ?? null); };
 
@@ -88,6 +91,9 @@ export function Studio() {
         <section>
           <div className="studio-bar">
             <DirectionToggle direction={direction} onChange={setDirection} />
+            <label className="direction-toggle">
+              <input type="checkbox" checked={showFlow} onChange={(e) => setShowFlow(e.target.checked)} /> data flow
+            </label>
             <button onClick={() => select(null)}>procedure settings</button>
           </div>
           {draft.steps.length === 0 ? (
@@ -98,13 +104,13 @@ export function Studio() {
             </div>
           ) : (
             <StepGraph steps={g.steps} edges={g.edges} branches={g.branches} start={g.start} end={g.end}
-              direction={direction} onSelect={(id) => select(id)} selected={selected ?? undefined} labels={g.labels} marks={marks} />
+              direction={direction} flow={flow} onSelect={(id) => select(id)} selected={selected ?? undefined} labels={g.labels} marks={marks} />
           )}
-          <LintPanel issues={issues} draft={draft} onPick={(i) => select(i.stepId ?? null, i.field)} />
+          <LintPanel issues={issues} draft={draft} onPick={(i) => select(i.stepId ?? null, i.field)} onFix={setDraft} />
         </section>
         <aside className="studio-panel" data-testid="studio-panel">
           {step
-            ? <StepPanel key={step.id} draft={draft} step={step} edit={edit}
+            ? <StepPanel key={step.id} draft={draft} step={step} edit={edit} available={available.get(step.id) ?? []}
                 onAdd={(k) => add(step.id, k)}
                 onDelete={() => { setDraft(deleteStep(draft, step.id)); setSelected(null); }}
                 onStart={() => setDraft(setStart(draft, step.id))}
@@ -119,7 +125,7 @@ export function Studio() {
 
 // ----------------------------------------------------------------------------------------------- lint panel
 
-function LintPanel({ issues, draft, onPick }: { issues: Issue[]; draft: Draft; onPick: (i: Issue) => void }) {
+function LintPanel({ issues, draft, onPick, onFix }: { issues: Issue[]; draft: Draft; onPick: (i: Issue) => void; onFix: (d: Draft) => void }) {
   const where = (i: Issue) => {
     const s = draft.steps.find((x) => x.id === i.stepId);
     return s ? `${label(s)}: ` : "";
@@ -138,6 +144,7 @@ function LintPanel({ issues, draft, onPick }: { issues: Issue[]; draft: Draft; o
               {these.map((i, n) => (
                 <li key={n} data-code={i.code} data-step={i.stepId}>
                   <button className="linkish" onClick={() => onPick(i)}>{where(i)}{i.message}</button> <code className="muted">{i.code}</code>
+                  {i.code === "unproduced_input" && i.key !== undefined && <Fixes issue={i} draft={draft} onFix={onFix} />}
                 </li>
               ))}
             </ul>
@@ -145,6 +152,28 @@ function LintPanel({ issues, draft, onPick }: { issues: Issue[]; draft: Draft; o
         );
       })}
     </section>
+  );
+}
+
+/** The one-click ways to give an unproduced key a producer: the client supplies it, or an earlier step outputs it. */
+function Fixes({ issue, draft, onFix }: { issue: Issue; draft: Draft; onFix: (d: Draft) => void }) {
+  const key = issue.key!;
+  const consumer = draft.steps.find((s) => s.id === issue.stepId);
+  const type = consumer?.inputs.find((i) => i.name === key)?.type ?? "string";
+  const makers = draft.steps.filter((s) => (s.kind === "execution" || s.kind === "client_task") && s.id !== issue.stepId);
+  return (
+    <span className="fixes" data-testid="lint-fixes">
+      {" "}
+      {draft.steps[0] && draft.steps[0].kind !== "router" && (
+        <button aria-label={`declare ${key} as a start input`} onClick={() => onFix(declareStartInput(draft, key, type))}>declare as start input</button>
+      )}
+      {makers.length > 0 && (
+        <select aria-label={`make ${key} an output of`} value="" onChange={(e) => e.target.value && onFix(declareOutput(draft, e.target.value, key, type))}>
+          <option value="">make it an output of…</option>
+          {makers.map((m) => <option key={m.id} value={m.id}>{label(m)}</option>)}
+        </select>
+      )}
+    </span>
   );
 }
 
@@ -209,9 +238,9 @@ function ProcedurePanel({ draft, edit }: { draft: Draft; edit: (c: (d: Draft) =>
         hint="lowercase letters, digits and hyphens" />
       <Text name="description" field="description" area value={draft.description} onChange={(v) => edit((d) => { d.description = v; })} />
       <Text name="purpose" field="purpose" area value={draft.purpose} onChange={(v) => edit((d) => { d.purpose = v; })} />
-      <Strings name="trigger_when" field="trigger_when" items={draft.triggerWhen} onChange={(v) => edit((d) => { d.triggerWhen = v; })} />
-      <Strings name="do_not_use_when" field="do_not_use_when" items={draft.doNotUseWhen} onChange={(v) => edit((d) => { d.doNotUseWhen = v; })} />
-      <Strings name="anti_patterns" field="anti_patterns" items={draft.antiPatterns} onChange={(v) => edit((d) => { d.antiPatterns = v; })} />
+      <Strings name="trigger_when" field="triggerWhen" items={draft.triggerWhen} onChange={(v) => edit((d) => { d.triggerWhen = v; })} />
+      <Strings name="do_not_use_when" field="doNotUseWhen" items={draft.doNotUseWhen} onChange={(v) => edit((d) => { d.doNotUseWhen = v; })} />
+      <Strings name="anti_patterns" field="antiPatterns" items={draft.antiPatterns} onChange={(v) => edit((d) => { d.antiPatterns = v; })} />
       <fieldset>
         <legend>requires</legend>
         <label className="option">
@@ -238,6 +267,8 @@ function ProcedurePanel({ draft, edit }: { draft: Draft; edit: (c: (d: Draft) =>
 interface StepPanelProps {
   draft: Draft;
   step: Step;
+  /** The keys this step may take as inputs. */
+  available: AvailableKey[];
   edit: (c: (d: Draft) => void) => void;
   onAdd: (k: StepKind) => void;
   onDelete: () => void;
@@ -246,7 +277,7 @@ interface StepPanelProps {
   onAddOnBranch: (index: number, kind: StepKind) => void;
 }
 
-function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill, onAddOnBranch }: StepPanelProps) {
+function StepPanel({ draft, step, available, edit, onAdd, onDelete, onStart, onPrefill, onAddOnBranch }: StepPanelProps) {
   const at = (d: Draft) => d.steps.find((s) => s.id === step.id)!;
   const set = (change: (s: Step) => void) => edit((d) => change(at(d)));
   const others = draft.steps.filter((s) => s.id !== step.id);
@@ -278,7 +309,7 @@ function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill, onA
         </Field>
       )}
 
-      {step.kind === "router" && <RouterFields step={step} set={set} target={target} onPrefill={onPrefill} onAddOnBranch={onAddOnBranch} />}
+      {step.kind === "router" && <RouterFields draft={draft} step={step} available={available} set={set} target={target} onPrefill={onPrefill} onAddOnBranch={onAddOnBranch} />}
       {step.kind === "decision" && <DecisionFields step={step} set={set} />}
       {step.kind === "execution" && (
         <>
@@ -317,7 +348,23 @@ function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill, onA
           </label>
         </>
       )}
-      {step.kind === "end" && <p className="muted">The inputs of the end step become the result. A typed editor for them arrives with the inputs and outputs editor.</p>}
+
+      {step.kind !== "router" && (
+        <IOEditor which="inputs" items={step.inputs} onChange={(v) => set((x) => { x.inputs = v; })} offer={isStart ? [] : available}
+          title={isStart ? "inputs: what the client supplies" : step.kind === "end" ? "inputs: the procedure's result" : "inputs"} />
+      )}
+      {(step.kind === "execution" || step.kind === "client_task") && (
+        <IOEditor which="outputs" items={step.outputs ?? []} onChange={(v) => set((x) => { x.outputs = v; })} offer={[]} title="outputs" />
+      )}
+      {step.kind === "decision" && (
+        <fieldset data-testid="decision-outputs">
+          <legend>outputs (one key per question)</legend>
+          {(step.questions ?? []).length === 0 && <p className="muted small">Add a question and its answer becomes a key.</p>}
+          <ul className="criteria">
+            {(step.questions ?? []).map((q, i) => <li key={i}><code>{q.name || "(unnamed)"}</code>: {QUESTION_TYPES[q.type]}</li>)}
+          </ul>
+        </fieldset>
+      )}
 
       <div className="actions">
         {runnable && !isStart && <button onClick={onStart}>make this the start</button>}
@@ -328,15 +375,23 @@ function StepPanel({ draft, step, edit, onAdd, onDelete, onStart, onPrefill, onA
   );
 }
 
-function RouterFields({ step, set, target, onPrefill, onAddOnBranch }: {
-  step: Step; set: (c: (s: Step) => void) => void; onPrefill: () => void; onAddOnBranch: (index: number, kind: StepKind) => void;
+function RouterFields({ draft, step, available, set, target, onPrefill, onAddOnBranch }: {
+  draft: Draft; step: Step; available: AvailableKey[]; set: (c: (s: Step) => void) => void; onPrefill: () => void; onAddOnBranch: (index: number, kind: StepKind) => void;
   target: (value: string | undefined, onChange: (v: string | undefined) => void, field?: string, aria?: string) => ReactNode;
 }) {
   const branches = step.branches ?? [];
   return (
     <>
-      <Text name="branch_on" field="branch_on" value={step.branchOn ?? ""} onChange={(v) => set((s) => { s.branchOn = v || undefined; })}
-        hint="the key whose value picks the branch" />
+      <Field name="branch_on" hint={
+        step.branchOn && possibleValues(draft, step.branchOn)
+          ? <span data-testid="possible-values">possible values: {possibleValues(draft, step.branchOn)!.join(", ")}</span>
+          : "the key whose value picks the branch"}>
+        <select value={step.branchOn ?? ""} data-field="branchOn" onChange={(e) => set((s) => { s.branchOn = e.target.value || undefined; })}>
+          <option value="">(choose a key)</option>
+          {available.map((k) => <option key={k.name} value={k.name}>{k.name} ({k.type})</option>)}
+          {step.branchOn && !available.some((k) => k.name === step.branchOn) && <option value={step.branchOn}>{step.branchOn} (not produced here)</option>}
+        </select>
+      </Field>
       <fieldset>
         <legend>branches (value → step)</legend>
         {branches.map((b, i) => (
@@ -447,6 +502,44 @@ function Criteria({ question, change }: { question: Question; change: (f: (q: Qu
         </div>
       ))}
       <button onClick={() => change((x) => { if (x.type === "score") x.criteria.push(""); })}>add level</button>
+    </fieldset>
+  );
+}
+
+/** Rows of name, type and description. A step's inputs can be taken from the keys available to it, which fills the
+ *  name and the type the key has, so the pick cannot disagree with its producer. */
+function IOEditor({ which, title, items, offer, onChange }: {
+  which: "inputs" | "outputs"; title: string; items: IOItem[]; offer: AvailableKey[]; onChange: (items: IOItem[]) => void;
+}) {
+  const taken = new Set(items.map((i) => i.name));
+  const left = offer.filter((k) => !taken.has(k.name));
+  const row = (i: number, change: (x: IOItem) => void) => onChange(items.map((x, j) => { if (j !== i) return x; const c = { ...x }; change(c); return c; }));
+  return (
+    <fieldset data-testid={`io-${which}`}>
+      <legend>{title}</legend>
+      {items.map((item, i) => (
+        <div className="row" key={i}>
+          <input type="text" value={item.name} data-field={`${which}[${i}].name`} aria-label={`${which} ${i + 1} name`} placeholder="name"
+            aria-invalid={!item.name || undefined} onChange={(e) => row(i, (x) => { x.name = e.target.value; })} />
+          <select value={item.type} data-field={`${which}[${i}].type`} aria-label={`${which} ${i + 1} type`} onChange={(e) => row(i, (x) => { x.type = e.target.value; })}>
+            {!(DATA_TYPES as readonly string[]).includes(item.type) && <option value={item.type}>{item.type}</option>}
+            {DATA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input type="text" value={item.description ?? ""} aria-label={`${which} ${i + 1} description`} placeholder="description"
+            onChange={(e) => row(i, (x) => { x.description = e.target.value || undefined; })} />
+          <button onClick={() => onChange(items.filter((_, j) => j !== i))} aria-label={`remove ${which} ${i + 1}`}>remove</button>
+        </div>
+      ))}
+      <div className="actions">
+        {left.length > 0 && (
+          <select value="" aria-label={`add ${which} from the state`}
+            onChange={(e) => { const k = left.find((x) => x.name === e.target.value); if (k) onChange([...items, { name: k.name, type: k.type }]); }}>
+            <option value="">add a key from the state…</option>
+            {left.map((k) => <option key={k.name} value={k.name}>{k.name} ({k.type})</option>)}
+          </select>
+        )}
+        <button data-field={which} onClick={() => onChange([...items, { name: "", type: "string" }])}>add new {which === "inputs" ? "input" : "output"}</button>
+      </div>
     </fieldset>
   );
 }
