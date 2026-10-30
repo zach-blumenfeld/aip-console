@@ -323,8 +323,7 @@ function StepPanel({ draft, step, available, edit, onAdd, onDelete, onStart, onP
           </Field>
           <Strings name="assets" field="assets" items={step.assets ?? []} onChange={(v) => set((s) => { s.assets = v; })} />
           <Field name="timeout (seconds)">
-            <input type="text" inputMode="numeric" data-field="timeout" value={step.timeout ?? ""}
-              onChange={(e) => set((s) => { const n = Number(e.target.value); s.timeout = e.target.value.trim() && Number.isFinite(n) ? n : undefined; })} />
+            <NumberInput value={step.timeout} field="timeout" ariaLabel="timeout" onCommit={(n) => set((s) => { s.timeout = n; })} />
           </Field>
         </>
       )}
@@ -414,6 +413,31 @@ function RouterFields({ draft, step, available, set, target, onPrefill, onAddOnB
   );
 }
 
+/** What a threshold does depends on the question: aip-spec's description of `thresholds`. */
+const THRESHOLD_HELP: Record<Question["type"], string> = {
+  noul: "Flag the answer for review when the probability of true is within this margin of 0.5: 0.1 flags answers between 0.4 and 0.6, and a higher value flags more. The client makes the final call on flagged answers.",
+  choice: "Flag the answer for review when the model's confidence in the label it chose is below this value: 0.8 flags anything under 80% confidence, and a higher value flags more. The client makes the final call on flagged answers.",
+  score: "Flag the answer for review when the model's confidence in the level it chose is below this value: 0.8 flags anything under 80% confidence, and a higher value flags more. The client makes the final call on flagged answers.",
+};
+
+/** A number field that keeps what is typed, so `0.` survives on the way to `0.5`, and hands over a number only when
+ *  the text is one (or nothing, which clears it). A value outside min and max is marked, and still handed over:
+ *  the linter says what is wrong with it. */
+function NumberInput({ value, onCommit, ariaLabel, field, min, max }: {
+  value: number | undefined; onCommit: (n: number | undefined) => void; ariaLabel: string; field?: string; min?: number; max?: number;
+}) {
+  const parse = (t: string): number | undefined | null => (t.trim() === "" ? undefined : Number.isFinite(Number(t)) ? Number(t) : null);
+  const [text, setText] = useState(value === undefined ? "" : String(value));
+  // Follow a change from outside (an undo, a different draft) unless the text already means this value.
+  useEffect(() => { if (parse(text) !== value) setText(value === undefined ? "" : String(value)); }, [value]);
+  const n = parse(text);
+  const bad = n === null || (n !== undefined && ((min !== undefined && n < min) || (max !== undefined && n > max)));
+  return (
+    <input type="text" inputMode="decimal" value={text} data-field={field} aria-label={ariaLabel} aria-invalid={bad || undefined}
+      onChange={(e) => { setText(e.target.value); const v = parse(e.target.value); if (v !== null) onCommit(v); }} />
+  );
+}
+
 function blankQuestion(type: Question["type"], name: string, instructions = ""): Question {
   if (type === "noul") return { type, name, instructions };
   if (type === "choice") return { type, name, instructions, criteria: [{ label: "", description: null }, { label: "", description: null }] };
@@ -441,12 +465,11 @@ function DecisionFields({ step, set }: { step: Step; set: (c: (s: Step) => void)
             </Field>
             <Text name="instructions" area value={question.instructions} onChange={(v) => q(i, (x) => { x.instructions = v; })} />
             <Criteria question={question} change={(f) => q(i, f)} />
-            <Field name="threshold (confidence needed)">
-              <input type="text" inputMode="decimal" aria-label={`${question.name} threshold`} value={step.thresholds?.[question.name] ?? ""}
-                onChange={(e) => set((s) => {
-                  const n = Number(e.target.value);
+            <Field name="review threshold, 0 to 1 (optional)" hint={<span data-testid="threshold-help">{THRESHOLD_HELP[question.type]}</span>}>
+              <NumberInput value={step.thresholds?.[question.name]} ariaLabel={`${question.name} threshold`} min={0} max={1}
+                onCommit={(n) => set((s) => {
                   const t = { ...(s.thresholds ?? {}) };
-                  if (e.target.value.trim() && Number.isFinite(n)) t[question.name] = n; else delete t[question.name];
+                  if (n === undefined) delete t[question.name]; else t[question.name] = n;
                   s.thresholds = Object.keys(t).length ? t : undefined;
                 })} />
             </Field>

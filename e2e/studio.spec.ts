@@ -188,3 +188,35 @@ test("a decision's outputs are read-only, one key per question, and the data vie
   await expect(arrow).toHaveAttribute("data-to", await idOf(page, "act"));
   await expect(page.getByTestId("input-node")).toBeVisible();
 });
+
+test("a decision's review threshold takes decimals, is checked against 0 to 1, and is explained per question type", async ({ page }) => {
+  await page.goto("./#/studio");
+  await page.getByRole("group", { name: "Add the first step" }).getByRole("button", { name: "+ decision" }).click();
+  await rename(page, "triage");
+  await page.getByRole("group", { name: "Add question" }).getByRole("button", { name: "+ noul" }).click();
+  const q = panel(page).getByTestId("question");
+  const threshold = q.getByLabel("question_1 threshold");
+  const help = q.getByTestId("threshold-help");
+
+  await expect(help).toContainText("within this margin of 0.5");
+  await threshold.pressSequentially("0.35");
+  await expect(threshold).toHaveValue("0.35");
+  await expect(threshold).not.toHaveAttribute("aria-invalid", "true");
+
+  // out of range is marked, and the linter says so
+  await threshold.fill("1.5");
+  await expect(threshold).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByTestId("lint-panel").locator('li[data-code="schema_violation"]', { hasText: "between 0 and 1" })).toHaveCount(1);
+  await threshold.fill("0.35");
+
+  // the meaning changes with the type: choice and score are about the model's confidence
+  await q.getByLabel("question_1 type").selectOption("choice");
+  await expect(help).toContainText("confidence");
+  await expect(threshold).toHaveValue("0.35");
+
+  await expect(page.getByTestId("studio-saved")).toHaveAttribute("data-state", "saved");
+  await page.reload();
+  await expect(panel(page)).toBeHidden();
+  await node(page, "triage").click();
+  await expect(panel(page).getByTestId("question").getByLabel("question_1 threshold")).toHaveValue("0.35");
+});
