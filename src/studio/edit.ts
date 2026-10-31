@@ -127,6 +127,14 @@ export function addStepOnBranch(d: Draft, routerId: string, index: number, kind:
   return { draft: out, id: step.id };
 }
 
+/** Rename a step in place. A script or template path still at the default for the old name follows the new one, so
+ *  its placeholder moves with it; a path the author chose is left alone. */
+export function renameStep(s: Step, name: string): void {
+  if (s.script === `scripts/${s.name}.py`) s.script = `scripts/${name}.py`;
+  if (s.template === `assets/${s.name}.md`) s.template = `assets/${name}.md`;
+  s.name = name;
+}
+
 /** Remove a step. What pointed at it points at its successor when it has exactly one; otherwise the edges are
  *  left dangling (unset) for the linter to report. Removing the start makes the successor the start. */
 export function deleteStep(d: Draft, id: string): Draft {

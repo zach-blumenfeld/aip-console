@@ -1,4 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DRAFT_KEY } from "../src/studio/storage";
+import { skillMdToDraft } from "../src/studio/serialize";
+import { unpackSkill } from "../src/zip";
+import { FIRST_REVISION_DIR } from "./aip";
+import { aipSpec, specErrors } from "./aip-spec";
 
 // The Studio tab (S1): build the billing-support graph by hand through the page, reload, and find the draft kept
 // and the wired part of the graph lint-clean. Inputs and outputs have no editor until S2, so the draft still has
@@ -219,4 +227,69 @@ test("a decision's review threshold takes decimals, is checked against 0 to 1, a
   await expect(panel(page)).toBeHidden();
   await node(page, "triage").click();
   await expect(panel(page).getByTestId("question").getByLabel("question_1 threshold")).toHaveValue("0.35");
+});
+
+// ------------------------------------------------------------------------------------------------ S3: the scaffold zip
+
+test("export a scaffold: placeholders follow their paths, the zip validates with aip-spec, and it publishes", async ({ page }) => {
+  // billing-support as the stored draft, under a name of its own so the catalog's billing-support is left alone
+  const draft = skillMdToDraft(readFileSync(path.join(FIRST_REVISION_DIR, "SKILL.md"), "utf8"));
+  draft.name = "studio-scaffold";
+  await page.goto("./#/studio");
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [DRAFT_KEY, JSON.stringify(draft)]);
+  await page.reload();
+  await expect(node(page, "escalate")).toBeVisible();
+
+  // every referenced file is a placeholder, and the linter says so on its step
+  const lintPanel = page.getByTestId("lint-panel");
+  await expect(lintPanel.locator('li[data-code="placeholder_file"]')).toHaveCount(5);
+
+  // a renamed step takes its default template path along; an edited script path moves the stub
+  await node(page, "reply").click();
+  await rename(page, "answer");
+  await expect(field(page, "template")).toHaveValue("assets/answer.md");
+  await node(page, "escalate").click();
+  await field(page, "script").fill("scripts/open-ticket.py");
+
+  // with an error, the summary says so and publishing is held back with the reason
+  await node(page, "end").click();
+  await field(page, "name").fill("End");
+  await page.getByTestId("studio-export").click();
+  const summary = page.getByTestId("export-summary");
+  await expect(summary).not.toHaveAttribute("data-errors", "0");
+  await expect(page.getByTestId("export-publish")).toBeDisabled();
+  await expect(page.getByTestId("export-publish-reason")).toBeVisible();
+  await rename(page, "end");
+  await expect(summary).toHaveAttribute("data-errors", "0");
+  await expect(summary).toHaveAttribute("data-unfinished", "5");
+
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-download").click()]);
+  expect(download.suggestedFilename()).toBe("studio-scaffold.zip");
+  const { files, folder } = unpackSkill(new Uint8Array(readFileSync(await download.path())));
+  expect(folder).toBe("studio-scaffold");
+  // SKILL.md, one script per execution step, one template per client task, the declared assets and references
+  const tree = files.map((f) => f.path);
+  console.log(`scaffold tree: ${tree.join(", ")}`);
+  expect(tree).toEqual(["SKILL.md", "assets/answer.md", "assets/config.json", "assets/policy.md", "references/help.md", "scripts/open-ticket.py", "source/README.md"]);
+
+  const root = mkdtempSync(path.join(tmpdir(), "studio-export-"));
+  try {
+    const dir = path.join(root, folder!);
+    for (const f of files) {
+      mkdirSync(path.dirname(path.join(dir, f.path)), { recursive: true });
+      writeFileSync(path.join(dir, f.path), f.bytes);
+    }
+    const { status } = aipSpec(["validate", dir]);
+    const errors = specErrors(dir);
+    console.log(`scaffold: aip-spec validate exited ${status} with ${errors.length} errors`);
+    expect(errors).toEqual([]);
+    expect(status).toBe(0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+
+  // the same files publish through the catalog flow, and the page lands on the new revision
+  await page.getByTestId("export-publish").click();
+  await expect(page).toHaveURL(/#\/p\/studio-scaffold(%40|@)[0-9a-f]{16}$/);
+  await expect(page.getByTestId("published-note")).toHaveAttribute("data-existed", "false");
 });

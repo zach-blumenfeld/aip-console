@@ -433,9 +433,16 @@ function unfinished(d: Draft, options: LintOptions, add: Add): void {
     if (s.kind === "execution" && s.command !== undefined && s.command[0] !== "python") {
       todo("non_python_launcher", `${label} is launched with \`${s.command[0] ?? ""}\`; Studio writes Python scripts only, so no stub is made for it`, s, "command");
     }
-    const paths = [s.script, s.template, ...(s.assets ?? []), ...(s.references ?? []).map((r) => r.path)].filter((p): p is string => !!p);
-    for (const path of unique(paths)) {
-      if (files[path]?.includes(PLACEHOLDER_MARKER)) todo("placeholder_file", `${label}: \`${path}\` is still a placeholder`, s);
+    const paths: [string | undefined, string][] = [
+      [s.script, "script"], [s.template, "template"],
+      ...(s.assets ?? []).map((a, i): [string, string] => [a, `assets[${i}]`]),
+      ...(s.references ?? []).map((r, i): [string, string] => [r.path, `references[${i}].path`]),
+    ];
+    const seen = new Set<string>();
+    for (const [path, field] of paths) {
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      if (files[path]?.includes(PLACEHOLDER_MARKER)) todo("placeholder_file", `${label}: \`${path}\` is still a placeholder`, s, field);
     }
   }
 }

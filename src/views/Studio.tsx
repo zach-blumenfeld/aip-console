@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DirectionToggle, StepGraph, useDirection } from "./StepGraph";
 import { DATA_TYPES, QUESTION_TYPES, RUNNABLE_KINDS, type Draft, type IOItem, type Question, type Step, type StepKind } from "../studio/draft";
-import { KINDS, addStepAfter, addStepOnBranch, declareOutput, declareStartInput, deleteStep, flowOf, graphOf, label, possibleValues, prefillBranches, setStart } from "../studio/edit";
+import { KINDS, addStepAfter, addStepOnBranch, declareOutput, declareStartInput, deleteStep, flowOf, graphOf, label, possibleValues, prefillBranches, renameStep, setStart } from "../studio/edit";
 import { availableKeys, lint, type AvailableKey, type Issue, type Tier } from "../studio/lint";
+import { fileTexts } from "../studio/scaffold";
 import { loadDraft, saveDraft } from "../studio/storage";
+import { ExportPanel } from "./StudioExport";
 
 const STEP_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const TIERS: Tier[] = ["error", "unfinished", "warning"];
@@ -17,6 +19,7 @@ export function Studio() {
   const [showFlow, setShowFlow] = useState(false);
   const [saved, setSaved] = useState<"saved" | "unsaved" | "no-storage">("saved");
   const [focus, setFocus] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const latest = useRef(draft);
   const dirty = useRef(false);
 
@@ -43,7 +46,8 @@ export function Studio() {
     return () => { window.removeEventListener("pagehide", flush); flush(); };
   }, []);
 
-  const issues = useMemo(() => lint(draft), [draft]);
+  // Every file a step names is still a placeholder until S4 carries real ones, so the linter sees what the export will hold.
+  const issues = useMemo(() => lint(draft, { files: fileTexts(draft) }), [draft]);
   const marks = useMemo(() => {
     const m = new Map<string, Tier>();
     for (const i of issues) {
@@ -95,7 +99,9 @@ export function Studio() {
               <input type="checkbox" checked={showFlow} onChange={(e) => setShowFlow(e.target.checked)} /> data flow
             </label>
             <button onClick={() => select(null)}>procedure settings</button>
+            <button onClick={() => setExporting((x) => !x)} aria-expanded={exporting} data-testid="studio-export">Export scaffold…</button>
           </div>
+          {exporting && <ExportPanel draft={draft} onClose={() => setExporting(false)} />}
           {draft.steps.length === 0 ? (
             <div className="studio-panel" data-testid="studio-empty">
               <h2>Start with the first step</h2>
@@ -299,7 +305,7 @@ function StepPanel({ draft, step, available, edit, onAdd, onDelete, onStart, onP
           <AddKinds label={`Add step after ${label(step)}`} kinds={KINDS} onAdd={onAdd} />
         </>
       )}
-      <Text name="name" field="name" value={step.name} invalid={!STEP_NAME.test(step.name)} onChange={(v) => set((s) => { s.name = v; })}
+      <Text name="name" field="name" value={step.name} invalid={!STEP_NAME.test(step.name)} onChange={(v) => set((s) => renameStep(s, v))}
         hint={STEP_NAME.test(step.name) ? "lowercase letters, digits and hyphens" : <span className="error">use lowercase letters, digits and single hyphens</span>} />
       <Text name="description" field="description" area value={step.description} onChange={(v) => set((s) => { s.description = v; })} />
 
@@ -313,7 +319,7 @@ function StepPanel({ draft, step, available, edit, onAdd, onDelete, onStart, onP
       {step.kind === "decision" && <DecisionFields step={step} set={set} />}
       {step.kind === "execution" && (
         <>
-          <Text name="script" field="script" value={step.script ?? ""} onChange={(v) => set((s) => { s.script = v; })} hint="under scripts/" />
+          <Text name="script" field="script" value={step.script ?? ""} onChange={(v) => set((s) => { s.script = v; })} hint="under scripts/; the export writes a Python stub here" />
           <Field name="command" hint="Python only for now">
             <select value={step.command?.join(" ") ?? ""} data-field="command" onChange={(e) => set((s) => { s.command = e.target.value ? [e.target.value] : undefined; })}>
               <option value="">default (python)</option>
@@ -329,13 +335,13 @@ function StepPanel({ draft, step, available, edit, onAdd, onDelete, onStart, onP
       )}
       {step.kind === "client_task" && (
         <>
-          <Text name="template" field="template" value={step.template ?? ""} onChange={(v) => set((s) => { s.template = v; })} hint="under assets/" />
+          <Text name="template" field="template" value={step.template ?? ""} onChange={(v) => set((s) => { s.template = v; })} hint="under assets/; the export writes a placeholder template here" />
           <Strings name="assets" field="assets" items={step.assets ?? []} onChange={(v) => set((s) => { s.assets = v; })} />
           <fieldset>
             <legend>references</legend>
             {(step.references ?? []).map((r, i) => (
               <div className="row" key={i}>
-                <input type="text" value={r.path} aria-label={`reference ${i + 1} path`} placeholder="references/…" onChange={(e) => set((s) => { s.references![i].path = e.target.value; })} />
+                <input type="text" value={r.path} data-field={`references[${i}].path`} aria-label={`reference ${i + 1} path`} placeholder="references/…" onChange={(e) => set((s) => { s.references![i].path = e.target.value; })} />
                 <input type="text" value={r.description} aria-label={`reference ${i + 1} description`} placeholder="description" onChange={(e) => set((s) => { s.references![i].description = e.target.value; })} />
                 <button onClick={() => set((s) => { s.references!.splice(i, 1); })}>remove</button>
               </div>

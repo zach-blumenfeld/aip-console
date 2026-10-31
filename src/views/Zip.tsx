@@ -36,7 +36,7 @@ export function DownloadZip({ name, revision }: { name: string; revision: string
   );
 }
 
-function save(filename: string, bytes: Uint8Array) {
+export function save(filename: string, bytes: Uint8Array) {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
   const a = document.createElement("a");
   a.href = url;
@@ -135,7 +135,7 @@ export interface PublishedNote { existed: boolean; warnings: ValidationIssue[]; 
 
 let published: { ref: string; note: PublishedNote } | null = null;
 
-function stashPublished(ref: string, note: PublishedNote) {
+export function stashPublished(ref: string, note: PublishedNote) {
   published = { ref, note };
 }
 
