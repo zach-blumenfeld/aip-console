@@ -181,7 +181,9 @@ Proof: e2e builds a two-step chain, adds a consuming input via the picker, then 
 producer's output and asserts the linter reports `unproduced_input` on the consumer and that the
 quick fix clears it.
 
-## - [ ] S3: Placeholders and the scaffold zip
+## - [x] S3: Placeholders and the scaffold zip
+
+Done 2026-10-31, commit eb4cc57: `src/studio/scaffold.ts` derives a working Python stub, template, reference and asset placeholder for every path a step names (live lint sees them as `placeholder_file`), `source/README.md` lists them and flags `DRAFT: N errors remain`, and the Export panel downloads the zip and publishes it (disabled with the reason while errors remain). A `.json` asset holds `{"AIP-STUDIO-PLACEHOLDER": …}` instead of a bare `{}` so the marker fits; renaming a step moves a script or template still at its default path.
 
 - Placeholder generation, derived from the Draft on export, never stored in it:
   - `execution` step: `scripts/<name>.py`. Python only (see decisions); other launchers get no
