@@ -3,7 +3,7 @@
 // (api/client.ts). The CLI's JSON lines are the contract of aip's docs/cli-json.md.
 
 import { MissingValidator, type Runner } from "../studio/agentCheck";
-import { store } from "../studio/import";
+import { store, type Upgrader } from "../studio/import";
 import type { ZipFile } from "../zip";
 
 /** `GET /console/config`. */
@@ -54,11 +54,12 @@ export interface DecisionQuestion {
 
 interface Common { step: string; state: Record<string, unknown>; run_id: string | null; run_file?: string }
 
+/** A decision pause: this client has no decision model and the step allows a manual answer (`fallback: true`).
+ *  `confidence` names the questions whose `<question>_confidence` a model would have written; a manual answer
+ *  writes none. */
 export type Paused =
-  | (Common & { paused: "decision"; questions: Record<string, DecisionQuestion> })
-  | (Common & { paused: "client_task"; task: string; references: { uri: string; description: string }[]; answer_with: Record<string, string> })
-  | (Common & { paused: "review"; proposed_answers: Record<string, unknown>;
-                review: { question: string; type: string; reason: string; confidence?: number; noul?: number; probabilities?: Record<string, number> }[] });
+  | (Common & { paused: "decision"; questions: Record<string, DecisionQuestion>; confidence: string[]; fallback: boolean })
+  | (Common & { paused: "client_task"; task: string; references: { uri: string; description: string }[]; answer_with: Record<string, string> });
 
 export interface Done { done: true; run_id: string | null; state: Record<string, unknown>; run_file?: string }
 
@@ -76,6 +77,8 @@ export interface RunErrorObject {
   missing?: string[];
   invalid?: string[];
   status?: number;
+  /** `no_decision_model`: the decision's `fallback`, always false here (a step that allows it pauses instead). */
+  fallback?: boolean;
 }
 
 export type Outcome = Paused | Done | RunErrorObject;
@@ -152,6 +155,8 @@ export interface SkillInfo {
     start: { step: string; kind: string; inputs: Record<string, string> };
     end: { step: string; kind: string; inputs: Record<string, string> };
     steps: Record<string, string>;
+    decisions: Record<string, { fallback: boolean; confidence: string[] }>;
+    routers: Record<string, { branch_on: string; confidence: { key: string; below: number; to: string } | null }>;
   };
   example_input: Record<string, unknown>;
 }
@@ -191,6 +196,13 @@ function post(path: string, body: unknown): Promise<Response> {
 async function errorText(res: Response): Promise<string> {
   try { return ((await res.json()) as { error: { message: string } }).error.message; } catch { return `${res.status} ${res.statusText}`; }
 }
+
+/** `POST /console/upgrade`: `aip upgrade` on the skill's files, as studio/import.ts's `upgradeDraft` runs it. */
+export const consoleUpgrader: Upgrader = async (name, files) => {
+  const res = await post("/console/upgrade", { name, files });
+  if (!res.ok) throw new Error(await errorText(res));
+  return (await res.json()) as Awaited<ReturnType<Upgrader>>;
+};
 
 /** The scaffold written to `<workdir>/studio/<name>/` for an agent to edit in place. */
 export async function writeHandoff(name: string, files: ZipFile[]): Promise<{ dir: string; previous: string | null }> {
