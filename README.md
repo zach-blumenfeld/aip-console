@@ -1,5 +1,7 @@
 # aip-console
 
+> **This repository is archived.** The console moved into the AIP repository on 2026-11-09, with its history: [`zach-blumenfeld/aip`, under `console/`](https://github.com/zach-blumenfeld/aip/tree/main/console). The npm package is still `aip-console` (`npx aip-console`), released from there since 0.9.0. Please open issues at [zach-blumenfeld/aip](https://github.com/zach-blumenfeld/aip/issues). What follows describes the console as of 0.7.1.
+
 The console (formerly inspector) for [AIP](https://github.com/zach-blumenfeld/aip): catalog, source and
 revision diff, run console, history and governance. It is an npm package with its own small Node process;
 the aip server serves no UI.
